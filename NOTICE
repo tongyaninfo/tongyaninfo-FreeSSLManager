@@ -1,0 +1,65 @@
+通研免费 SSL 管理系统（Tongyan FreeSSL Manager）
+Copyright 2026 tongyaninfo contributors.
+
+本产品包含或衍生自以下第三方开源项目，其许可证与版权声明如下。完整的依赖清单与许可证以
+package-lock.json、*.csproj 及各自依赖包内 LICENSE 文件为准；本文件仅列出在产品源码中
+实质性保留、需要随分发声明的主要第三方组件。
+
+--------------------------------------------------------------------------------
+1. Ant Design Pro（前端脚手架与模板，MIT License）
+--------------------------------------------------------------------------------
+本项目前端以 Ant Design Pro v6 模板初始化，保留并修改了其部分模板代码与演示页面。
+Ant Design Pro 版权与许可：
+
+MIT License
+
+Copyright (c) 2019-present Alipay.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+2. frontend/tools/ 下的构建期本地替代包（原创实现，MIT License）
+--------------------------------------------------------------------------------
+- frontend/tools/cli-banner/：@tongyan/build-cli-banner，终端横幅的原创纯文本实现。
+- frontend/tools/toolbar-disabled/：@tongyan/build-toolbar-disabled，固定关闭 Stagewise
+  开发工具栏的原创替代包。
+两者均为本项目原创代码，以 MIT License 发布，许可正文见各包内 LICENSE 文件；包内的
+同名依赖键仅用于 npm 依赖解析兼容，不代表与上游包存在代码关联。
+
+--------------------------------------------------------------------------------
+3. 主要运行时与框架依赖
+--------------------------------------------------------------------------------
+- .NET 运行时、ASP.NET Core、Entity Framework Core（MIT License，Copyright .NET Foundation
+  and Contributors）
+- OpenIddict（Apache License 2.0，Copyright Kévin Chalet and contributors）
+- ModelContextProtocol.AspNetCore（MIT License，Copyright Anthropic, PBC and contributors）
+- MailKit（MIT License，Copyright Jeffrey Stedfast）
+- SSH.NET（MIT License，Copyright Renci）
+- React、React DOM（MIT License，Copyright Meta Platforms, Inc. and affiliates）
+- UmiJS / Umi Max（MIT License，Copyright umijs contributors）
+- Ant Design、Ant Design Pro Components、Ant Design X（MIT License，Copyright Alipay.com）
+- Tailwind CSS（MIT License，Copyright Tailwind Labs, Inc.）
+- Biome（MIT License，Copyright Biome developers）
+- 其余 npm 依赖的许可证见 package-lock.json 对应包内 LICENSE 文件。
+
+--------------------------------------------------------------------------------
+4. 本产品自身许可
+--------------------------------------------------------------------------------
+本产品源码以 Apache License 2.0 发布，全文见仓库根目录 LICENSE。第三方组件仍遵循各自
+许可证；Apache License 2.0 不改变第三方组件原许可条款。

@@ -1,0 +1,13 @@
+{
+  "name": "@tongyan/build-cli-banner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "开发诊断命令的原创纯文本横幅兼容入口",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "exports": {
+    ".": "./index.cjs",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.cjs", "LICENSE"]
+}

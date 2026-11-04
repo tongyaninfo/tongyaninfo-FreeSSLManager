@@ -1,0 +1,27 @@
+# 通研免费 SSL 管理系统 · 编辑器统一配置
+# .NET / C#、TypeScript / JavaScript、JSON、YAML、Markdown 共用的基础约定。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{cs,csproj,slnx,props,targets}]
+indent_size = 4
+
+[*.{json,jsonc,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{cs,csx}]
+# 仓库使用 LF，避免 Windows / macOS 检出差异影响迁移文件校验。
+end_of_line = lf
+
+[Makefile]
+indent_style = tab

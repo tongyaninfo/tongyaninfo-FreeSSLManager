@@ -1,0 +1,281 @@
+.ty-ssl-dashboard {
+  --ssl-text: #1b2c4c;
+  --ssl-muted: #7b889f;
+  --ssl-border: #e7edf5;
+  --ssl-soft: #f4f7fc;
+  --ssl-blue: #1849a9;
+  color: var(--ssl-text);
+}
+.ty-ssl-dashboard.is-dark {
+  --ssl-text: #e7edf7;
+  --ssl-muted: #9baac2;
+  --ssl-border: #2a3548;
+  --ssl-soft: #192337;
+  --ssl-blue: #8fb4ff;
+}
+.ty-ssl-dashboard__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 4px 0 28px;
+}
+.ty-ssl-dashboard__eyebrow {
+  font-size: 11px;
+  color: var(--ssl-blue);
+  font-weight: 700;
+  letter-spacing: 2.5px;
+}
+.ty-ssl-dashboard__hero h1 {
+  margin: 10px 0 8px;
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.ty-ssl-dashboard__hero p {
+  color: var(--ssl-muted);
+  margin: 0;
+  line-height: 1.8;
+}
+.ty-ssl-dashboard__metric.ant-card {
+  border: 1px solid var(--ssl-border);
+  border-radius: 16px;
+  height: 100%;
+  box-shadow: 0 4px 18px #1f3b6412;
+}
+.ty-ssl-dashboard__metric .ant-card-body {
+  padding: 22px;
+}
+.ty-ssl-dashboard__metric-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--ssl-muted);
+  font-size: 13px;
+  gap: 12px;
+}
+.ty-ssl-dashboard__metric-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--ssl-blue);
+  font-size: 21px;
+  border-radius: 11px;
+  background: var(--ssl-soft);
+}
+.ty-ssl-dashboard__metric--expiring .ty-ssl-dashboard__metric-icon {
+  color: #c67520;
+  background: #fdf3e8;
+}
+.ty-ssl-dashboard__number {
+  display: block;
+  font-size: 34px;
+  font-weight: 650;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  color: var(--ssl-text);
+}
+.ty-ssl-dashboard__metric-bottom {
+  padding-top: 10px;
+  border-top: 1px solid var(--ssl-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ssl-muted);
+  font-size: 12px;
+}
+.ty-ssl-dashboard__metric-bottom a {
+  padding: 3px 5px;
+  color: var(--ssl-blue);
+}
+.ty-ssl-dashboard__sections {
+  margin-top: 22px;
+}
+.ty-ssl-dashboard__panel.ant-card {
+  border: 1px solid var(--ssl-border);
+  border-radius: 16px;
+}
+.ty-ssl-dashboard__panel .ant-card-head {
+  border-color: var(--ssl-border);
+  padding: 0 24px;
+  min-height: 64px;
+}
+.ty-ssl-dashboard__panel .ant-card-head-title {
+  font-size: 16px;
+}
+.ty-ssl-dashboard__panel .ant-card-extra {
+  font-size: 12px;
+}
+.ty-ssl-dashboard__panel .ant-card-body {
+  padding: 22px 24px;
+}
+.ty-ssl-dashboard__section-mark {
+  width: 4px;
+  height: 16px;
+  background: #e48a2d;
+  border-radius: 4px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.ty-ssl-dashboard__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #946119;
+  background: #fff9ee;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.8;
+  margin-bottom: 6px;
+}
+.ty-ssl-dashboard__certificate .ant-list-item-meta-title {
+  overflow-wrap: anywhere;
+}
+.ty-ssl-dashboard__certificate .ant-list-item-meta-description {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.ty-ssl-dashboard__certificate-icon {
+  width: 38px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: var(--ssl-soft);
+  color: var(--ssl-blue);
+  border-radius: 10px;
+  font-size: 20px;
+}
+.ty-ssl-dashboard__shortcuts {
+  display: grid;
+  gap: 14px;
+}
+.ty-ssl-dashboard__shortcut {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ssl-text);
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition:
+    background 160ms,
+    border-color 160ms;
+}
+.ty-ssl-dashboard__shortcut:hover {
+  color: var(--ssl-blue);
+  background: var(--ssl-soft);
+  border-color: var(--ssl-border);
+}
+.ty-ssl-dashboard__shortcut > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.ty-ssl-dashboard__shortcut strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ty-ssl-dashboard__shortcut small {
+  display: block;
+  color: var(--ssl-muted);
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.7;
+}
+.ty-ssl-dashboard__shortcut > .anticon:last-child {
+  color: var(--ssl-muted);
+  font-size: 12px;
+}
+.ty-ssl-dashboard__shortcut-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--ssl-soft);
+  color: var(--ssl-blue);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  flex-shrink: 0;
+}
+.ty-ssl-dashboard__scope {
+  padding: 20px 12px 0;
+  display: flex;
+  gap: 10px;
+  color: var(--ssl-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.ty-ssl-dashboard__scope .anticon {
+  color: var(--ssl-blue);
+  margin-top: 4px;
+}
+.ty-ssl-dashboard__distribution {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ty-ssl-dashboard__status-summary {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ssl-soft);
+  margin-bottom: 22px;
+  font-size: 13px;
+  color: var(--ssl-muted);
+}
+.ty-ssl-dashboard__status-summary strong {
+  color: var(--ssl-text);
+  margin-left: 6px;
+}
+.ty-ssl-dashboard__status-summary .anticon {
+  color: var(--ssl-blue);
+}
+.ty-ssl-dashboard__provider {
+  padding: 12px 0 20px;
+}
+.ty-ssl-dashboard__provider .anticon {
+  color: var(--ssl-blue);
+  margin-right: 6px;
+}
+.ty-ssl-dashboard__provider-note {
+  color: var(--ssl-muted);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+@media (max-width: 600px) {
+  .ty-ssl-dashboard__hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .ty-ssl-dashboard__hero h1 {
+    font-size: 24px;
+  }
+  .ty-ssl-dashboard__hero p {
+    font-size: 13px;
+  }
+  .ty-ssl-dashboard__panel .ant-card-head {
+    padding: 0 16px;
+  }
+  .ty-ssl-dashboard__panel .ant-card-body {
+    padding: 16px;
+  }
+  .ty-ssl-dashboard__panel .ant-card-head-title {
+    font-size: 14px;
+  }
+  .ty-ssl-dashboard__certificate.ant-list-item {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ty-ssl-dashboard__certificate .ant-list-item-action {
+    margin: 0 0 0 54px;
+  }
+}

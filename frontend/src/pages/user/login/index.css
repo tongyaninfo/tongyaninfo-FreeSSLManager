@@ -1,0 +1,191 @@
+.ty-ssl-login {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: #1b2c4c;
+  background:
+    radial-gradient(ellipse at 10% 20%, #e5edff 0, transparent 50%), #f5f7fb;
+}
+.ty-ssl-login__header {
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  padding: 26px 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ty-ssl-login__brand {
+  width: 204px;
+  height: 68px;
+  object-fit: contain;
+}
+.ty-ssl-login__lang {
+  border: 1px solid #dce4f0;
+  border-radius: 12px;
+  background: #fff;
+}
+.ty-ssl-login__main {
+  width: min(1120px, 100%);
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 88px;
+  align-items: center;
+  margin: 0 auto;
+  padding: 38px 40px 62px;
+  box-sizing: border-box;
+}
+.ty-ssl-login__eyebrow {
+  color: #1849a9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+.ty-ssl-login__intro h1 {
+  margin: 20px 0;
+  font-size: clamp(29px, 3vw, 40px);
+  letter-spacing: -1px;
+  line-height: 1.45;
+}
+.ty-ssl-login__intro > p {
+  color: #64748b;
+  max-width: 440px;
+  font-size: 16px;
+  line-height: 1.9;
+}
+.ty-ssl-login__features {
+  margin: 36px 0 0;
+  display: grid;
+  gap: 18px;
+}
+.ty-ssl-login__feature {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.ty-ssl-login__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #dce5f4;
+  background: #ffffffb3;
+  color: #1849a9;
+  border-radius: 14px;
+  flex-shrink: 0;
+  font-size: 21px;
+}
+.ty-ssl-login__feature strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.ty-ssl-login__feature span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ty-ssl-login__card {
+  padding: 36px;
+  min-width: 0;
+  border: 1px solid #e3e9f2;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 20px 70px #1437650d;
+}
+.ty-ssl-login__accent {
+  display: block;
+  width: 32px;
+  height: 4px;
+  background: #ee8b23;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+.ty-ssl-login__card h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  color: #1b2c4c;
+}
+.ty-ssl-login__card > p {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.7;
+}
+.ty-ssl-login__card .ant-pro-form-login-container {
+  padding: 0;
+  min-width: 0;
+}
+.ty-ssl-login__card .ant-pro-form-login-main {
+  width: 100%;
+  min-width: 0;
+}
+.ty-ssl-login__card .ant-input-affix-wrapper {
+  min-height: 48px;
+  background: #f6f8fc;
+  border-color: #e4eaf3;
+  border-radius: 10px;
+}
+.ty-ssl-login__card .ant-btn-primary {
+  background: #1849a9;
+  border-radius: 10px;
+  min-height: 48px;
+  box-shadow: none;
+}
+.ty-ssl-login__remember {
+  margin-bottom: 8px;
+}
+.ty-ssl-login__note {
+  border-top: 1px solid #edf0f5;
+  margin-top: 8px;
+  padding-top: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #8793a7;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.ty-ssl-login__note .anticon {
+  margin-top: 4px;
+}
+@media (max-width: 900px) {
+  .ty-ssl-login__main {
+    gap: 36px;
+    padding-inline: 28px;
+  }
+  .ty-ssl-login__card {
+    padding: 28px;
+  }
+}
+@media (max-width: 700px) {
+  .ty-ssl-login__header {
+    padding: 16px 24px;
+  }
+  .ty-ssl-login__brand {
+    width: 168px;
+    height: 56px;
+  }
+  .ty-ssl-login__main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 20px 24px 24px;
+    gap: 24px;
+    max-width: 480px;
+  }
+  .ty-ssl-login__intro h1 {
+    margin: 12px 0 8px;
+    font-size: 27px;
+  }
+  .ty-ssl-login__intro > p {
+    margin-bottom: 0;
+    font-size: 14px;
+  }
+  .ty-ssl-login__features {
+    display: none;
+  }
+  .ty-ssl-login__card {
+    padding: 26px 24px;
+    border-radius: 18px;
+  }
+}

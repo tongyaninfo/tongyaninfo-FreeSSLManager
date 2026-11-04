@@ -1,0 +1,16 @@
+{
+  "name": "@tongyan/build-toolbar-disabled",
+  "version": "1.0.0",
+  "private": true,
+  "description": "显式关闭开发工具栏的原创构建兼容入口",
+  "license": "MIT",
+  "main": "./lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "LICENSE"
+  ]
+}

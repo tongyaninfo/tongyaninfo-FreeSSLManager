@@ -1,0 +1,6 @@
+name = "freessl-manager-api"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+[vars]
+ENVIRONMENT = "production"

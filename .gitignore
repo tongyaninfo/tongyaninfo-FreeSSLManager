@@ -1,0 +1,97 @@
+# 依赖与本地开发工具
+**/node_modules/
+backend/.tools/
+.npm/
+.pnpm-store/
+
+# .NET、前端编译输出与缓存
+**/bin/
+**/obj/
+**/dist/
+**/.umi/
+**/.umi-production/
+**/.umi-test/
+**/.umi-undefined/
+**/.turbopack/
+**/.cache/
+**/.vite/
+# 本地隔离验证使用临时构建目录，不把暂存副本加入源码。
+/.mcp-*-build-*/
+*.tsbuildinfo
+# 请求录制缓存，保留 types/ 下的类型定义。
+/frontend/types/cache/
+
+# 运行数据、数据库及备份（App_Data 中包含加密密钥与证书材料）
+**/App_Data/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+**/*.sqlite-journal
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+**/*.sqlite3-journal
+*.sslbak
+
+# 本地环境配置；保留可提交的示例模板和默认 appsettings.json
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+!.env.template
+!.env.*.template
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+!.dev.vars.*.example
+!.dev.vars.sample
+!.dev.vars.*.sample
+!.dev.vars.template
+!.dev.vars.*.template
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.local.json
+appsettings.*.local.json
+
+# 导出的证书私钥与签名凭据
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+
+# 测试报告、日志与 Cloudflare 本地状态
+coverage/
+TestResults/
+test-results/
+playwright-report/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.wrangler/
+
+# 编辑器个人状态与操作系统临时文件
+.vs/
+.idea/
+.history/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.claude/settings.local.json
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

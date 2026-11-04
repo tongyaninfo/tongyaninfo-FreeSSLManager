@@ -1,0 +1,38 @@
+# 统一行尾与文件类型；源码、配置与文档默认 LF，避免跨平台检出差异。
+* text=auto eol=lf
+
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.slnx      text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.css       text eol=lf
+*.less      text eol=lf
+*.sh        text eol=lf
+
+# 二进制资源
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.svg       text eol=lf
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.pdf       binary
+*.zip       binary
+
+# 本地运行数据与密钥不进入版本库
+App_Data/   export-ignore
+*.db        binary
+*.pem       binary
+*.pfx       binary
+*.p12       binary

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端构建与测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK（读取 global.json）
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 还原依赖
+        run: dotnet restore backend/SslManager.slnx
+
+      - name: 构建
+        run: dotnet build backend/SslManager.slnx --no-restore --configuration Release
+
+      - name: 测试
+        run: dotnet test backend/SslManager.Tests/SslManager.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: 上传测试结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/SslManager.Tests/TestResults/*.trx
+          if-no-files-found: ignore
+
+  frontend:
+    name: 前端静态检查、测试与构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖（严格按锁文件）
+        run: npm ci --no-audit --no-fund
+
+      - name: 静态检查（Biome + TypeScript）
+        run: npm run lint
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 生产构建
+        run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: warn
+
+  sensitive-scan:
+    name: 敏感信息扫描
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 扫描敏感信息
+        run: node scripts/scan-open-source-sensitive.mjs --root .

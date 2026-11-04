@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞私下报告
+    url: https://github.com/tongyaninfo/tongyaninfo-FreeSSLManager/security/advisories/new
+    about: 不要用公开 Issue 报告安全漏洞；请私下提交，并避免附带真实凭据与生产数据。
+  - name: 使用文档
+    url: https://github.com/tongyaninfo/tongyaninfo-FreeSSLManager#readme
+    about: 构建、启动、配置与备份说明请先阅读 README 与文档。
