@@ -1,0 +1,281 @@
+name: Release
+
+# 推送形如 v1.1.0 的 tag 后运行：先校验 tag 与根 VERSION、CHANGELOG 一致，
+# 再构建前端静态产物与多架构容器镜像（API + Web），汇总为草稿（draft）Release，
+# 人工检查后手动发布。
+#
+# 产物：前端静态文件 zip、GHCR 多架构镜像（linux/amd64 + linux/arm64）、镜像清单。
+# 桌面客户端不在本仓库范围，桌面安装包由独立仓库/流程发布。
+#
+# 前置条件：仓库需允许 Actions 写权限
+# Settings → Actions → General → Workflow permissions → Read and write permissions
+# 否则镜像推送会失败；首次推送的 GHCR 包默认为 private，如需公开拉取请在 Packages 设置中调整。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  prepare:
+    name: 版本与构建前置校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      image_prefix: ${{ steps.check.outputs.image_prefix }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验 tag、VERSION 与 CHANGELOG
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$version" != "$file_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 VERSION ${file_version} 不一致，请先更新 VERSION 与 CHANGELOG"
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag 版本必须是不带前缀的稳定语义版本，例如 v1.1.0"
+            exit 1
+          fi
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 缺少 ## [$version] 版本记录"
+            exit 1
+          fi
+          # GHCR 镜像名必须小写；owner/repo 组合降低为小写。
+          image_prefix="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "image_prefix=${image_prefix}" >> "$GITHUB_OUTPUT"
+          echo "版本校验通过：${version}；镜像前缀：${image_prefix}"
+
+  frontend:
+    name: 前端静态产物
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: prepare
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: 构建前端
+        working-directory: frontend
+        run: npm run build
+
+      - name: 校验构建产物
+        shell: bash
+        run: |
+          test -f frontend/dist/index.html
+          echo "前端产物文件数：$(find frontend/dist -type f | wc -l | tr -d ' ')"
+
+      - name: 上传前端产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  docker:
+    name: 容器镜像（${{ matrix.component }} / ${{ matrix.arch }}）
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: amd64
+            platform: linux/amd64
+            component: api
+          - os: ubuntu-24.04
+            arch: amd64
+            platform: linux/amd64
+            component: web
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            platform: linux/arm64
+            component: api
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            platform: linux/arm64
+            component: web
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送单架构镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.component }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ needs.prepare.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.title=tongyaninfo-FreeSSLManager-${{ matrix.component }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+  docker-merge:
+    name: 合并多架构镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare, docker]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 合并 api/web 的 amd64/arm64 清单
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="${{ needs.prepare.outputs.image_prefix }}"
+          version="${{ needs.prepare.outputs.version }}"
+          for component in api web; do
+            docker buildx imagetools create \
+              --tag "${prefix}-${component}:${version}" \
+              --tag "${prefix}-${component}:latest" \
+              "${prefix}-${component}:${version}-amd64" \
+              "${prefix}-${component}:${version}-arm64"
+          done
+          {
+            docker buildx imagetools inspect "${prefix}-api:${version}"
+            echo "---"
+            docker buildx imagetools inspect "${prefix}-web:${version}"
+          } > image-manifest.txt
+          cat image-manifest.txt
+
+      - name: 上传镜像清单
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-manifest
+          path: image-manifest.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: 生成草稿 Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare, frontend, docker-merge]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: artifacts/frontend-dist
+
+      - name: 下载镜像清单
+        uses: actions/download-artifact@v4
+        with:
+          name: image-manifest
+          path: artifacts
+
+      - name: 整理附件与校验和
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          mkdir -p release-assets
+          (cd artifacts/frontend-dist && zip -qr "../../release-assets/FreeSSLManager-${version}-frontend.zip" .)
+          cp artifacts/image-manifest.txt release-assets/image-manifest.txt
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+          ls -lh release-assets
+
+      - name: 创建草稿 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ needs.prepare.outputs.version }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: release-assets/*
+          body: |
+            ## 通研 FREE SSL 管理 v${{ needs.prepare.outputs.version }}
+
+            本 Release 由 tag `${{ github.ref_name }}` 自动构建，当前为草稿状态，检查后手动发布。
+
+            ### 产物
+
+            - `FreeSSLManager-<版本>-frontend.zip`：前端静态文件（可交由 Nginx 等静态服务器托管）；
+            - `image-manifest.txt`：API 与 Web 多架构镜像清单；
+            - `SHA256SUMS.txt`：全部附件校验和。
+
+            ### 容器镜像
+
+            ```
+            docker pull ${{ needs.prepare.outputs.image_prefix }}-api:${{ needs.prepare.outputs.version }}
+            docker pull ${{ needs.prepare.outputs.image_prefix }}-web:${{ needs.prepare.outputs.version }}
+            ```
+
+            两个镜像均提供 `linux/amd64` 与 `linux/arm64`，并附带 `latest` 标签。
+
+            ### 部署说明
+
+            1. 参考 `deploy/docker/compose.yaml`：`api` 容器挂载持久卷到 `/app/App_Data`，保存 SQLite 数据库与 DataProtection 密钥，升级时必须整体保留；
+            2. `web` 容器托管前端并把 `/api`、`/mcp`、`/oauth/mcp/` 等同源代理到 API；
+            3. 生产部署请启用 HTTPS 反向代理；MCP 默认关闭，启用需配置 OAuth 证书与白名单，详见仓库文档；
+            4. 首次部署后按界面或文档初始化管理员账号。
+
+            ### 校验
+
+            `sha256sum -c SHA256SUMS.txt`
+
+            ### 构建信息
+
+            - 提交：`${{ github.sha }}`
+            - 工作流：`.github/workflows/release.yml`

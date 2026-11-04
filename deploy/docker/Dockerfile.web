@@ -1,0 +1,16 @@
+# 多阶段构建：适用于可访问 npm 的 CI 或构建机。
+# 构建上下文为仓库根：
+#   docker build -f deploy/docker/Dockerfile.web -t freesslmanager-web:local .
+FROM node:24-bookworm AS build
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+FROM nginx:stable-alpine AS runtime
+# 只包含正式构建产物，不含源码与开发配置。
+COPY --from=build /src/frontend/dist /usr/share/nginx/html
+COPY deploy/docker/nginx.conf /etc/nginx/templates/default.conf.template
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+EXPOSE 80

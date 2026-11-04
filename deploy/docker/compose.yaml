@@ -1,0 +1,36 @@
+# 前后端两个容器：nginx 托管前端并把 /api、/mcp 等同源代理到后端。
+# 数据目录由部署者准备：./data 挂载到 API 容器的 /app/App_Data，
+# 其中保存 SQLite 数据库与 DataProtection 密钥，升级时必须整体保留。
+services:
+  api:
+    image: ghcr.io/tongyaninfo/tongyaninfo-freesslmanager-api:${FREESSLMANAGER_TAG:-latest}
+    container_name: tongyan-freesslmanager-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+    volumes:
+      - ./data:/app/App_Data
+    networks:
+      - internal
+
+  web:
+    image: ghcr.io/tongyaninfo/tongyaninfo-freesslmanager-web:${FREESSLMANAGER_TAG:-latest}
+    container_name: tongyan-freesslmanager-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${FREESSLMANAGER_HTTP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

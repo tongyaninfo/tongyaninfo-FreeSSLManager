@@ -1,0 +1,23 @@
+# 多阶段构建：适用于可访问 NuGet 的 CI 或构建机。
+# 构建上下文为仓库根：
+#   docker build -f deploy/docker/Dockerfile.api -t freesslmanager-api:local .
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY global.json ./
+COPY backend/ ./backend/
+RUN dotnet restore backend/SslManager.Api/SslManager.Api.csproj
+RUN dotnet publish backend/SslManager.Api/SslManager.Api.csproj --configuration Release --output /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    ASPNETCORE_HTTP_PORTS=8080 \
+    ConnectionStrings__Default="Data Source=/app/App_Data/ssl-manager.db" \
+    Storage__KeyDirectory=/app/App_Data/keys
+COPY --from=build /app/publish ./
+# SQLite 数据库与 DataProtection 密钥必须位于同一持久卷；镜像内不包含任何运行数据或凭据。
+RUN mkdir -p /app/App_Data && chown -R app:app /app
+VOLUME ["/app/App_Data"]
+USER app
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "SslManager.Api.dll"]
