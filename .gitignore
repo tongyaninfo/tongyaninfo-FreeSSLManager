@@ -95,3 +95,10 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# 桌面客户端构建与打包产物（构建现场不入库）
+/desktop/.artifacts/
+/desktop/releases/
+/desktop/dist/
+/desktop/build/generated-icons/
+/desktop/build/current-icons.json

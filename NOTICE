@@ -56,6 +56,10 @@ SOFTWARE.
 - Ant Design、Ant Design Pro Components、Ant Design X（MIT License，Copyright Alipay.com）
 - Tailwind CSS（MIT License，Copyright Tailwind Labs, Inc.）
 - Biome（MIT License，Copyright Biome developers）
+- Electron（MIT License，Copyright Electron contributors）
+- electron-builder（MIT License，Copyright electron-builder contributors）
+- TypeScript（Apache License 2.0，Copyright Microsoft Corporation）
+- Playwright / playwright-core（Apache License 2.0，Copyright Microsoft Corporation；桌面集成测试）
 - 其余 npm 依赖的许可证见 package-lock.json 对应包内 LICENSE 文件。
 
 --------------------------------------------------------------------------------

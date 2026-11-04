@@ -1,0 +1,75 @@
+appId: com.tongyaninfo.free-ssl-manager
+productName: SSL证书管理
+copyright: Copyright © tongyaninfo contributors
+asar: true
+npmRebuild: false
+buildDependenciesFromSource: false
+buildVersion: ${env.DESKTOP_BUILD_VERSION}
+files:
+  - dist/src/**/*
+  - resources/**/*
+  - package.json
+  - '!**/*.map'
+extraResources:
+  - from: ${env.DESKTOP_BACKEND_DIR}
+    to: backend
+directories:
+  output: ${env.DESKTOP_OUTPUT_DIR}
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+publish: null
+toolsets:
+  nsis: 1.2.1
+  appimage: 1.0.3
+mac:
+  icon: ${env.DESKTOP_ICON_MAC}
+  identity: '-'
+  notarize: false
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: ${env.DESKTOP_ENTITLEMENTS}
+  entitlementsInherit: ${env.DESKTOP_ENTITLEMENTS}
+  target:
+    - dmg
+    - zip
+win:
+  icon: ${env.DESKTOP_ICON_WIN}
+  signExecutable: false
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+linux:
+  syncDesktopName: true
+  icon: ${env.DESKTOP_ICON_LINUX}
+  executableName: free-ssl-manager
+  category: Utility
+  maintainer: tongyaninfo contributors
+  target:
+    - deb
+    - AppImage
+deb:
+  depends:
+    - libgtk-3-0 | libgtk-3-0t64
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0 | libatspi2.0-0t64
+    - libuuid1
+    - libsecret-1-0
+    - ca-certificates
+    - libc6
+    - libgcc-s1
+    - libgssapi-krb5-2
+    - libicu78 | libicu76 | libicu74 | libicu72
+    - libssl3t64 | libssl3
+    - libstdc++6
+    - tzdata
+    - zlib1g
+    - libbrotli1

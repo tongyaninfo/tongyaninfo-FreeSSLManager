@@ -1,0 +1,7 @@
+# 预构建前端产物打包镜像：构建上下文需包含 frontend/dist 与 deploy/docker/nginx.conf。
+# 用于 CI 或离线环境，避免在容器内重复安装前端依赖。
+FROM nginx:stable-alpine
+COPY frontend/dist /usr/share/nginx/html
+COPY deploy/docker/nginx.conf /etc/nginx/templates/default.conf.template
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+EXPOSE 80

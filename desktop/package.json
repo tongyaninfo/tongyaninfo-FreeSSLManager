@@ -1,0 +1,43 @@
+{
+  "name": "free-ssl-manager-desktop",
+  "version": "1.1.1",
+  "private": true,
+  "description": "SSL 证书管理桌面客户端（Electron + 自包含 .NET 宿主 + SQLite）",
+  "author": "tongyaninfo contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tongyaninfo/tongyaninfo-FreeSSLManager.git",
+    "directory": "desktop"
+  },
+  "main": "dist/src/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "release:check": "node ../scripts/release.mjs check",
+    "build:electron": "tsc -p tsconfig.json",
+    "build": "npm run build:electron",
+    "dev": "node scripts/dev.mjs",
+    "install:electron": "node node_modules/electron/install.js",
+    "start": "electron .",
+    "test:unit": "node --test dist/tests/*.test.js",
+    "test:packaging": "node --test tests-packaging/*.test.mjs",
+    "test:integration": "node --test integration/*.test.mjs",
+    "test": "npm run build:electron && npm run test:unit && npm run test:packaging",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:backend": "node scripts/build.mjs --prepare-only",
+    "package": "node scripts/build.mjs",
+    "package:all": "node scripts/build.mjs --all",
+    "package:collect": "node scripts/collect-release.mjs",
+    "package:container": "node scripts/container-package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
+    "playwright-core": "1.64.1",
+    "typescript": "7.0.2"
+  },
+  "homepage": "https://github.com/tongyaninfo/tongyaninfo-FreeSSLManager"
+}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>桌面设置</title>
+  <link rel="stylesheet" href="desktop.css">
+</head>
+<body>
+  <main>
+    <h1>桌面设置</h1>
+    <p class="muted" id="version"></p>
+    <section><h2>后台运行</h2>
+      <p id="status" role="status">正在读取状态…</p>
+      <label class="check"><input id="closeToTray" type="checkbox">关闭窗口后继续在后台运行</label>
+      <label class="check"><input id="launchAtLogin" type="checkbox">登录系统后自动启动</label>
+      <p class="muted">完全退出、关机或睡眠期间不能执行计划；重新启动或唤醒后继续未完成轮次。</p>
+      <button id="save">保存设置</button>
+    </section>
+    <section><h2>备份与恢复</h2>
+      <label for="password">备份密码</label>
+      <input id="password" type="password" minlength="8" maxlength="1024" autocomplete="off" placeholder="至少 8 个字符，仅用于本次操作">
+      <p class="muted">加密备份包含数据库和解密凭据所需的密钥。导入会保留原数据，已启用计划将恢复执行。</p>
+      <div class="actions"><button id="export">导出加密备份</button><button id="import" class="secondary">导入备份</button></div>
+    </section>
+    <section><h2>本机数据</h2>
+      <p class="path" id="dataDirectory"></p>
+      <div class="actions"><button id="openData" class="secondary">打开数据目录</button><button id="openLogs" class="secondary">打开日志目录</button></div>
+      <p class="muted">安装升级只替换程序，业务数据与历史任务保存在用户目录。</p>
+    </section>
+    <p id="message" role="alert" aria-live="polite"></p>
+  </main>
+  <script src="desktop-settings.js"></script>
+</body>
+</html>

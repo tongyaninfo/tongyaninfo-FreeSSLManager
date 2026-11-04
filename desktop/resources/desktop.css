@@ -1,0 +1,11 @@
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: #172b4d; background: #f5f7fb; font-size: 14px; }
+body { margin: 0; } main { max-width: 680px; margin: 28px auto; padding: 0 28px 32px; }
+h1 { font-size: 26px; margin-bottom: 8px; } h2 { font-size: 17px; margin: 0 0 16px; }
+section { background: #fff; border: 1px solid #e4e9f2; border-radius: 10px; padding: 22px; margin-top: 22px; }
+p { line-height: 1.7; } .muted { color: #64748b; font-size: 13px; }.path { overflow-wrap: anywhere; }
+label { display: block; margin: 12px 0; } .check { display: flex; gap: 10px; align-items: center; }
+input[type=password] { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #c8d3e2; border-radius: 6px; font: inherit; }
+button { border: 1px solid #2463d4; border-radius: 6px; background: #2463d4; padding: 9px 15px; color: white; font: inherit; cursor: pointer; }
+button.secondary { background: white; color: #244467; border-color: #c8d3e2; }button:disabled { opacity: .55; cursor: wait; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }.success { color: #137847; }.error { color: #b32932; }
+button:focus-visible, input:focus-visible { outline: 3px solid #a7c6ff; outline-offset: 2px; }

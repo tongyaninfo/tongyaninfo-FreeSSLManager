@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "date": "2026-11-04",
+  "previousVersion": null,
+  "database": {
+    "provider": "Microsoft.EntityFrameworkCore.Sqlite",
+    "targetMigration": "20261104065304_AddMcpApiKeysAndAudit",
+    "snapshotSha256": "be98fb47983528f3eb62073343c8127f12230124f536eddae412b978a31b54dd",
+    "migrations": [
+      {
+        "id": "20261015094736_InitialCreate",
+        "sha256": "6a30e904e81672d7f9f8deec480c1f3dfdd9a285e9003a9e1ab7411cfed0e58a",
+        "designerSha256": "8f965a0d45a551b2eda298f27f4bffab164b1058ec54964067b91541797ed5bd",
+        "summary": "初始化用户、云账号、域名、证书、校验、任务与审计共7表"
+      },
+      {
+        "id": "20261015113232_AddCloudAccountSyncAndTestState",
+        "sha256": "129d4125a828a9e3cf4b92b4c2a2d7a051038e5aa2da4706016b96b43c8ce358",
+        "designerSha256": "3da4bcd91393030dd80e4cd732763df6219443a1b94bfc3f7140583f3bad25d8",
+        "summary": "云账号增加自动同步与连接测试状态共11列"
+      },
+      {
+        "id": "20261015123945_RemoveAutoSyncScope",
+        "sha256": "f2eb18373d2c6c5708746ebe98b195a081fd25d8d9b2beb0e1ab4b6b2c350898",
+        "designerSha256": "5ecd07017ace76423e5a5622b23730286804d6fde4a519dbae7152a527cecadd",
+        "summary": "删除云账号AutoSyncScope列，原列数据不能依靠Down恢复"
+      },
+      {
+        "id": "20261015152909_AddAliyunContactId",
+        "sha256": "5a3424024891604da519a595924aa007a436e74a0c3ca8ba998a74828fded301",
+        "designerSha256": "e390c992e28fcee424884cdf71f94f187811ddd35134bc1004f8821d0cdf9969",
+        "summary": "云账号增加AliyunContactId列"
+      },
+      {
+        "id": "20261028061409_AddDeploymentTargets",
+        "sha256": "15d974259e31c2f077111f31d3650a22afaa400b7c830f0b0961c9c9a77168c9",
+        "designerSha256": "31f679e2598fe0eeb5b93dadef0a6332af0862cf0c7c81d1cd9d41ab569bbc03",
+        "summary": "新增部署目标、批次、任务、步骤、绑定及材料快照共6表"
+      },
+      {
+        "id": "20261028061614_AddDeploymentRecoveryTasks",
+        "sha256": "2fbf17fa7de67b2c48341b9337e1ef498c0de6bdca1c73209d022af89c65f67c",
+        "designerSha256": "c49870e23e774a3df70904aa1162b9d866d33df791e8a1b81044bb614b7455fc",
+        "summary": "部署任务增加SourceTaskId，批次增加OperationType"
+      },
+      {
+        "id": "20261101093752_AddCertificateSchedules",
+        "sha256": "b6195f3880633159710531d7f78b27e24a4419a0269dee3a407e0329cc9cda5a",
+        "designerSha256": "63ceff3c9742c8e32b3914e4ea0f50f75155e919392de6345c1a2bc22c9ed29a",
+        "summary": "新增证书周期计划与运行轮次共2表"
+      },
+      {
+        "id": "20261102061651_AddMailSending",
+        "sha256": "62f9b996a3f39f2f56f1a6441b4bc2c162fafc5e7d25ced502a781ac9f9a397f",
+        "designerSha256": "ab033e30ccbdd457fb4488c5281f5dfc5af487769f600a852f92607b234bd6c1",
+        "summary": "新增邮件设置与邮件消息共2表"
+      },
+      {
+        "id": "20261102103053_AddCertificateExpiryAlerts",
+        "sha256": "71ef9b1d4ba32d9e6e4e7cc2317ac53b71e601d4a2b710986ed24c2b158ff5de",
+        "designerSha256": "ad29a585fba1383b197327e93b96fb52619497e350ac6024dcb4524eb48f3470",
+        "summary": "新增到期提醒设置与证书预警共2表"
+      },
+      {
+        "id": "20261102133402_AddMcpServices",
+        "sha256": "d98358231639f2ef3d7ded715fd295334e12062779ee3aaf44279f2b5ae1a784",
+        "designerSha256": "7276a15f37a9c5a9682c2194f58299150e12086b8b0fc9e9502ec923ab61f23c",
+        "summary": "新增MCP及OAuth共9表"
+      },
+      {
+        "id": "20261103161458_AddCloudflareAcmeIssuance",
+        "sha256": "1826be0562a7d7dec7bdc36eb213957ade25d314e477167d1797dc6c5f18c739",
+        "designerSha256": "23da33d13d0199126cabde6208a80fcfdd5f5eea9d1646f5cf3d6369ca38101c",
+        "summary": "增加ACME长期签发台账、既有/显式注册账号接入及跨平台DNS计划字段"
+      },
+      {
+        "id": "20261104065304_AddMcpApiKeysAndAudit",
+        "sha256": "93d26510cf51e6e491ac3547c9766cab2d94d5ae892ed9f4a0adc29b47a6ef8a",
+        "designerSha256": "a3f99f4cabda599333d99064810a981addffb582edf6040c345ab044b29a11de",
+        "summary": "新增McpApiKeys；增量扩展McpSettings实例身份、McpOperations调用凭据身份与McpInvocationLogs安全上下文"
+      }
+    ],
+    "newMigrations": [],
+    "changes": "首个开源版本基线，归档全部 12 个既有 SQLite 迁移；本版无新增数据库结构变化。"
+  },
+  "upgrade": {
+    "supportedFromVersions": [],
+    "requiresExplicitApproval": true,
+    "strategy": "应用显式执行或经用户确认的升级流程应用迁移；普通启动不建库、不迁库。升级前应停止写入、备份 SQLite 数据库与原 keys，并核对目标迁移终点。",
+    "rollback": "本版无新增结构，回退仍保留数据库与原 keys；恢复需成套恢复原数据库/keys 与匹配程序，不能仅回退程序或自动执行 EF Down。"
+  }
+}

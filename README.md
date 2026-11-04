@@ -8,13 +8,13 @@
 
 通研免费 SSL 管理系统面向需要维护多个域名、云账号和服务的开发者与运维人员：集中管理腾讯云、阿里云、Cloudflare 的证书与 DNS 资源，自动完成 Let's Encrypt ACME 签发，预览并批量部署到自建服务，按周期自动申请与部署，并在到期前通过 SMTP 提醒。同时提供标准 MCP 接口，让支持 MCP 的 AI Agent 在授权范围内查询状态、准备证书申请和部署计划。
 
-本仓库包含**后端 + Web 前端**完整源码，以 Apache License 2.0 开源。桌面客户端不在本仓库范围内。
+本仓库包含**后端 + Web 前端 + 桌面客户端**完整源码，以 Apache License 2.0 开源；桌面客户端提供 Windows、macOS 与 Linux 安装包构建流程。
 
 ![证书工作台：资源概览与近期到期证书](docs/assets/dashboard-zh-CN.png)
 
 > 截图使用合成演示数据：域名、账号、地址与读数均为演示用途，不代表真实环境。
 
-**当前版本：[1.1.0](CHANGELOG.md)**（以根目录 [VERSION](VERSION) 为准）
+**当前版本：[1.1.1](CHANGELOG.md)**（以根目录 [VERSION](VERSION) 为准）
 
 ## 能力概览
 
@@ -62,7 +62,8 @@ Cloudflare 在本系统中提供 DNS 管理，不提供 Origin CA 或边缘证�
 | --- | --- |
 | 后端 | .NET 10、ASP.NET Core、Entity Framework Core 10、SQLite（12 个累计迁移）、OpenIddict、MailKit、SSH.NET、ModelContextProtocol.AspNetCore |
 | 前端 | React 19、UmiJS Max 4、Ant Design 6、Tailwind CSS 4、TypeScript、Vitest、Biome |
-| CI | GitHub Actions（后端 restore/build/test + 前端 npm ci/lint/test/build） |
+| 桌面客户端 | Electron 45、TypeScript 7、自包含 .NET 10 宿主、SQLite |
+| 发布 | GitHub Actions：CI + tag 触发的多平台安装包与容器镜像发布 |
 
 ```text
 .
@@ -72,7 +73,11 @@ Cloudflare 在本系统中提供 DNS 管理，不提供 Origin CA 或边缘证�
 │   ├── SslManager.Tests/        # xUnit 测试
 │   └── SslManager.slnx
 ├── frontend/                    # React + UmiJS Max 管理界面
+├── desktop/                     # Electron 桌面客户端：外壳、自包含后端暂存与打包脚本
+├── deploy/docker/               # API 与 Web 容器构建文件与 Compose 示例
+├── docs/releases/               # 版本说明与数据库迁移台账
 ├── .github/workflows/ci.yml     # 持续集成
+├── .github/workflows/release.yml # tag 触发的多平台发布
 ├── global.json                  # .NET SDK 版本固定
 ├── VERSION                      # 当前源码版本
 └── README.md / LICENSE / NOTICE / CONTRIBUTING.md / SECURITY.md / CHANGELOG.md
@@ -126,6 +131,11 @@ npm run build        # 产物输出到 frontend/dist/
 ```
 
 将 `frontend/dist/` 交由静态文件服务器托管，并把 `/api` 反向代理到后端即可。公网部署时请启用 HTTPS 并限制管理入口访问来源。
+
+### 3. 桌面客户端（可选）
+
+桌面客户端使用 Electron 外壳 + 自包含 .NET 后端 + SQLite，终端用户无需安装 .NET 或数据库。
+构建、打包与运行说明见 [desktop/README.md](desktop/README.md)。
 
 ## 配置说明
 

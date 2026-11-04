@@ -1,11 +1,11 @@
 name: Release
 
-# 推送形如 v1.1.0 的 tag 后运行：先校验 tag 与根 VERSION、CHANGELOG 一致，
-# 再构建前端静态产物与多架构容器镜像（API + Web），汇总为草稿（draft）Release，
+# 推送形如 v1.1.1 的 tag 后运行：先校验 tag 与根 VERSION、CHANGELOG 一致，
+# 再构建多平台桌面安装包、前端静态产物与多架构容器镜像，汇总为草稿（draft）Release，
 # 人工检查后手动发布。
 #
-# 产物：前端静态文件 zip、GHCR 多架构镜像（linux/amd64 + linux/arm64）、镜像清单。
-# 桌面客户端不在本仓库范围，桌面安装包由独立仓库/流程发布。
+# 产物：Windows/macOS/Linux 安装包（x64 + ARM64）、前端静态产物、api/web 多架构容器镜像。
+# 安装包为未签名测试包：macOS 使用 ad-hoc 签名，Windows 未签名；正式分发前需配置签名与公证。
 #
 # 前置条件：仓库需允许 Actions 写权限
 # Settings → Actions → General → Workflow permissions → Read and write permissions
@@ -38,7 +38,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 校验 tag、VERSION 与 CHANGELOG
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 校验 tag、VERSION、CHANGELOG 与版本台账
         id: check
         shell: bash
         run: |
@@ -46,18 +51,18 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           file_version="$(tr -d '[:space:]' < VERSION)"
           if [ "$version" != "$file_version" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} 与 VERSION ${file_version} 不一致，请先更新 VERSION 与 CHANGELOG"
+            echo "::error::tag ${GITHUB_REF_NAME} 与 VERSION ${file_version} 不一致，请先更新 VERSION、版本台账与 CHANGELOG"
             exit 1
           fi
           if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::tag 版本必须是不带前缀的稳定语义版本，例如 v1.1.0"
+            echo "::error::tag 版本必须是不带前缀的稳定语义版本，例如 v1.1.1"
             exit 1
           fi
           if ! grep -qF "## [$version]" CHANGELOG.md; then
             echo "::error::CHANGELOG.md 缺少 ## [$version] 版本记录"
             exit 1
           fi
-          # GHCR 镜像名必须小写；owner/repo 组合降低为小写。
+          node scripts/release.mjs check
           image_prefix="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "image_prefix=${image_prefix}" >> "$GITHUB_OUTPUT"
@@ -87,17 +92,160 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: 校验构建产物
-        shell: bash
+      - name: 打包前端产物
+        working-directory: frontend
         run: |
-          test -f frontend/dist/index.html
-          echo "前端产物文件数：$(find frontend/dist -type f | wc -l | tr -d ' ')"
+          test -f dist/index.html
+          tar -czf frontend-dist.tar.gz dist
+          tar -tzf frontend-dist.tar.gz | head -3
+          echo "前端产物文件数：$(tar -tzf frontend-dist.tar.gz | wc -l | tr -d ' ')"
 
       - name: 上传前端产物
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: frontend/dist
+          path: frontend/frontend-dist.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop:
+    name: 桌面安装包（${{ matrix.rid }}）
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    needs: [prepare, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            rid: win-x64
+          - os: macos-26
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+          - os: ubuntu-24.04
+            rid: linux-x64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK（读取 global.json）
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-artifact
+
+      - name: 解压前端产物
+        shell: bash
+        run: |
+          mkdir -p frontend
+          tar -xzf frontend-artifact/frontend-dist.tar.gz -C frontend
+          test -f frontend/dist/index.html
+
+      - name: 安装桌面依赖
+        run: npm ci --prefix desktop --ignore-scripts --no-audit --no-fund
+
+      - name: 安装 Electron 运行时
+        working-directory: desktop
+        run: node node_modules/electron/install.js
+
+      - name: 安装 Linux 打包工具
+        if: matrix.os == 'ubuntu-24.04'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: 构建安装包
+        working-directory: desktop
+        run: npm run package -- --target ${{ matrix.rid }} --skip-frontend
+
+      - name: 收集安装包
+        shell: bash
+        run: |
+          mkdir -p "out/${{ matrix.rid }}"
+          find desktop/.artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} "out/${{ matrix.rid }}/" \;
+          ls -lh "out/${{ matrix.rid }}"
+          test -n "$(find "out/${{ matrix.rid }}" -type f | head -1)"
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.rid }}
+          path: out/${{ matrix.rid }}/**
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-experimental:
+    name: 实验性安装包（${{ matrix.rid }}）
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    needs: [prepare, frontend]
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-11-arm
+            rid: win-arm64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK（读取 global.json）
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-artifact
+
+      - name: 解压前端产物
+        shell: bash
+        run: |
+          mkdir -p frontend
+          tar -xzf frontend-artifact/frontend-dist.tar.gz -C frontend
+          test -f frontend/dist/index.html
+
+      - name: 安装桌面依赖
+        run: npm ci --prefix desktop --ignore-scripts --no-audit --no-fund
+
+      - name: 安装 Electron 运行时
+        working-directory: desktop
+        run: node node_modules/electron/install.js
+
+      - name: 安装 Linux 打包工具
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: 构建安装包
+        working-directory: desktop
+        run: npm run package -- --target ${{ matrix.rid }} --skip-frontend
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.rid }}
+          path: desktop/.artifacts/**
           if-no-files-found: error
           retention-days: 7
 
@@ -105,7 +253,7 @@ jobs:
     name: 容器镜像（${{ matrix.component }} / ${{ matrix.arch }}）
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    needs: prepare
+    needs: [prepare, frontend]
     strategy:
       fail-fast: false
       matrix:
@@ -133,6 +281,20 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 下载前端产物（web）
+        if: matrix.component == 'web'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-artifact
+
+      - name: 解压前端产物（web）
+        if: matrix.component == 'web'
+        run: |
+          mkdir -p frontend
+          tar -xzf frontend-artifact/frontend-dist.tar.gz -C frontend
+          test -f frontend/dist/index.html
+
       - name: 登录 GHCR
         uses: docker/login-action@v3
         with:
@@ -147,7 +309,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/docker/Dockerfile.${{ matrix.component }}
+          file: ${{ matrix.component == 'web' && 'deploy/docker/Dockerfile.web.prebuilt' || 'deploy/docker/Dockerfile.api' }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ needs.prepare.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
@@ -208,7 +370,7 @@ jobs:
     name: 生成草稿 Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [prepare, frontend, docker-merge]
+    needs: [prepare, frontend, desktop, docker-merge]
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -217,7 +379,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: artifacts/frontend-dist
+          path: artifacts/frontend
 
       - name: 下载镜像清单
         uses: actions/download-artifact@v4
@@ -225,14 +387,21 @@ jobs:
           name: image-manifest
           path: artifacts
 
+      - name: 下载桌面安装包
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: artifacts/desktop
+
       - name: 整理附件与校验和
         shell: bash
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
           mkdir -p release-assets
-          (cd artifacts/frontend-dist && zip -qr "../../release-assets/FreeSSLManager-${version}-frontend.zip" .)
+          cp artifacts/frontend/frontend-dist.tar.gz "release-assets/FreeSSLManager-${version}-frontend.tar.gz"
           cp artifacts/image-manifest.txt release-assets/image-manifest.txt
+          find artifacts/desktop -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release-assets/ \;
           (cd release-assets && sha256sum * > SHA256SUMS.txt)
           ls -lh release-assets
 
@@ -251,7 +420,9 @@ jobs:
 
             ### 产物
 
-            - `FreeSSLManager-<版本>-frontend.zip`：前端静态文件（可交由 Nginx 等静态服务器托管）；
+            - **桌面安装包**：Windows x64 NSIS、macOS Intel / Apple Silicon DMG+ZIP、Linux x64 DEB/AppImage；
+              构建成功时附 Windows ARM64 与 Linux ARM64（实验性支持）；
+            - `FreeSSLManager-<版本>-frontend.tar.gz`：前端静态文件（解压得到 `dist/`）；
             - `image-manifest.txt`：API 与 Web 多架构镜像清单；
             - `SHA256SUMS.txt`：全部附件校验和。
 
@@ -264,12 +435,18 @@ jobs:
 
             两个镜像均提供 `linux/amd64` 与 `linux/arm64`，并附带 `latest` 标签。
 
+            ### 未签名说明
+
+            桌面安装包**未使用正式代码签名**：macOS 使用 ad-hoc 签名，首次打开如提示"无法验证开发者"，
+            请右键选择"打开"或移除隔离属性后运行；Windows 可能触发 SmartScreen 提示，选择"仍要运行"。
+            正式签名与公证需另行配置后发布新版本。
+
             ### 部署说明
 
-            1. 参考 `deploy/docker/compose.yaml`：`api` 容器挂载持久卷到 `/app/App_Data`，保存 SQLite 数据库与 DataProtection 密钥，升级时必须整体保留；
-            2. `web` 容器托管前端并把 `/api`、`/mcp`、`/oauth/mcp/` 等同源代理到 API；
-            3. 生产部署请启用 HTTPS 反向代理；MCP 默认关闭，启用需配置 OAuth 证书与白名单，详见仓库文档；
-            4. 首次部署后按界面或文档初始化管理员账号。
+            1. 容器部署参考 `deploy/docker/compose.yaml`：`api` 挂载持久卷到 `/app/App_Data`，
+               保存 SQLite 数据库与 DataProtection 密钥，升级时必须整体保留；
+            2. 桌面客户端为 Electron + 自包含 .NET 宿主 + SQLite，首次启动初始化管理员，数据目录见桌面文档；
+            3. 生产部署请启用 HTTPS 反向代理；MCP 默认关闭，启用需配置 OAuth 证书与白名单。
 
             ### 校验
 
