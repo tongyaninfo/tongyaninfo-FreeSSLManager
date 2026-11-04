@@ -5,4 +5,8 @@ public sealed record McpRuntimeOptions(bool Supported, bool OAuthReady, string M
 {
     /// <summary>API Key 不依赖 OAuth 签名材料，桌面实例仍不对外提供服务。</summary>
     public bool ApiKeyReady => Supported;
+    public string[] TrustedProxyRanges { get; init; } = [];
+    /// <summary>OAuth资源独立绑定启动时HTTPS issuer，不能随HTTP主服务基址降级。</summary>
+    public string OAuthBaseUrl(string serviceBaseUrl) => !OAuthReady ? "" : McpNetwork.ValidHttpsOrigin(Issuer) ? McpNetwork.NormalizeOrigin(Issuer)
+        : McpNetwork.ValidHttpsOrigin(serviceBaseUrl) ? McpNetwork.NormalizeOrigin(serviceBaseUrl) : "";
 }

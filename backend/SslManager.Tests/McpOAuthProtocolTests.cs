@@ -84,15 +84,53 @@ public sealed class McpOAuthProtocolTests
     }
 
     [Theory]
-    [InlineData("http://ssl.example.com/mcp", "HTTPS_REQUIRED")]
     [InlineData("https://ssl.example.com:8443/mcp", "INVALID_HOST")]
-    public async Task InsecureSchemeAndDifferentPublicPortAreRejected(string url, string code)
+    public async Task DifferentServicePortIsRejected(string url, string code)
     {
         await using var f = await Fixture.CreateAsync();
         using var http = f.App.GetTestClient();
         using var response = await http.PostAsync(url, new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()); Assert.Equal(code, json.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task PlainHttpRefusesEvenValidOAuthTokenAndNeverPublishesOAuthMetadata()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var token = await f.TokenAsync();
+        using var http = f.App.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://ssl.example.com/mcp")
+        { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.DoesNotContain("resource_metadata", response.Headers.WwwAuthenticate.ToString());
+        using var metadata = await http.GetAsync("http://ssl.example.com/.well-known/oauth-protected-resource/mcp");
+        Assert.Equal(HttpStatusCode.BadRequest, metadata.StatusCode);
+        using var endpoint = await http.PostAsync("http://ssl.example.com/oauth/mcp/token", new FormUrlEncodedContent(f.TokenFields("https://ssl.example.com/mcp")));
+        Assert.Equal(HttpStatusCode.BadRequest, endpoint.StatusCode);
+    }
+
+    [Fact]
+    public async Task HttpPrimaryBasePreservesHttpsOAuthResourceAndConnectionProfile()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await using (var scope = f.App.Services.CreateAsyncScope())
+        {
+            var config = scope.ServiceProvider.GetRequiredService<IMcpConfigurationService>();
+            var input = (await config.GetAsync(default)).Data!;
+            var saved = await config.SaveAsync(new() { Enabled = true, PublicBaseUrl = "http://192.168.1.20:5080", SystemName = input.SystemName,
+                ConfigRevision = input.ConfigRevision, AllowedCidrs = input.AllowedCidrs, AllowedTools = input.AllowedTools }, default);
+            Assert.True(saved.Success, saved.Message);
+            var profile = (await scope.ServiceProvider.GetRequiredService<IMcpClientService>().ProfileAsync(f.Client.Id, default)).Data!;
+            Assert.Equal("http://192.168.1.20:5080/mcp", profile.McpUrl);
+            Assert.Equal("https://ssl.example.com/mcp", profile.OAuthMcpUrl);
+            Assert.Equal("https://ssl.example.com/oauth/mcp/token", profile.TokenUrl);
+            var contract = JsonSerializer.SerializeToElement(profile, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.Equal("https://ssl.example.com/mcp", contract.GetProperty("oauthMcpUrl").GetString());
+        }
+        Assert.NotEmpty(await f.TokenAsync());
     }
 
     [Fact]

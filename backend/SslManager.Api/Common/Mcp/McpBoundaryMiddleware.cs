@@ -17,16 +17,17 @@ public sealed class McpBoundaryMiddleware(RequestDelegate next)
         var oauth = path.StartsWithSegments("/oauth/mcp") || path.StartsWithSegments("/.well-known");
         if (!mcp && !oauth) { await next(context); return; }
         context.Response.Headers.CacheControl = "no-store";
-        if (!context.Request.IsHttps) { await Reject(context, 400, "HTTPS_REQUIRED"); return; }
+        if (!context.Request.IsHttps && oauth) { await Reject(context, 400, "HTTPS_REQUIRED"); return; }
         if (!runtime.Supported || oauth && !runtime.OAuthReady)
         { await Reject(context, 503, "MCP_NOT_READY"); return; }
         var settings = await db.McpSettings.AsNoTracking().SingleOrDefaultAsync(context.RequestAborted);
         if (settings is null || !settings.Enabled)
         { await Reject(context, 503, "MCP_DISABLED"); return; }
-        if (!Uri.TryCreate(settings.PublicBaseUrl, UriKind.Absolute, out var address) || runtime.OAuthReady && settings.PublicBaseUrl != runtime.Issuer
-            || !string.Equals(context.Request.Host.Host, address.Host, StringComparison.OrdinalIgnoreCase)
-            || (context.Request.Host.Port ?? 443) != address.Port)
+        if (!McpNetwork.MatchesServiceAddress(context.Request, settings.PublicBaseUrl, runtime)
+            || oauth && !McpNetwork.MatchesExactAddress(context.Request, runtime.OAuthBaseUrl(settings.PublicBaseUrl)))
         { await Reject(context, 400, "INVALID_HOST"); return; }
+        if (!context.Request.IsHttps && !McpNetwork.VerifiedPrivateHttpSource(context, runtime, out var sourceCode))
+        { await Reject(context, 403, sourceCode); return; }
         if (context.Request.Query.Keys.Any(key => key.Equals("access_token", StringComparison.OrdinalIgnoreCase)
             || key.Equals("api_key", StringComparison.OrdinalIgnoreCase) || key.Equals("apikey", StringComparison.OrdinalIgnoreCase)
             || key.Equals("api-key", StringComparison.OrdinalIgnoreCase) || key.Equals("x-api-key", StringComparison.OrdinalIgnoreCase)
@@ -34,7 +35,8 @@ public sealed class McpBoundaryMiddleware(RequestDelegate next)
             || key.Equals("token", StringComparison.OrdinalIgnoreCase)))
         { await Reject(context, 400, "TOKEN_IN_QUERY_FORBIDDEN"); return; }
         var origin = context.Request.Headers.Origin.ToString();
-        if (origin.Length > 0 && !McpConfigurationService.Strings(settings.AllowedOriginsJson).Contains(origin.TrimEnd('/')))
+        if (origin.Length > 0 && (!McpNetwork.ValidOrigin(origin)
+            || !McpConfigurationService.Strings(settings.AllowedOriginsJson).Contains(McpNetwork.NormalizeOrigin(origin))))
         { await Reject(context, 403, "ORIGIN_FORBIDDEN"); return; }
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "";
         if (!McpNetwork.Contains(McpConfigurationService.Strings(settings.AllowedCidrsJson), ip))
@@ -51,7 +53,8 @@ public sealed class McpBoundaryMiddleware(RequestDelegate next)
         }
         if (mcp && !await McpRequestShape.CheckAsync(context)) return;
         await next(context);
-        if (context.Response.StatusCode >= 400) await RecordDeniedAsync(context, context.Response.StatusCode, "PROTOCOL_OR_AUTH_REJECTED");
+        if (context.Response.StatusCode >= 400) await RecordDeniedAsync(context, context.Response.StatusCode,
+            context.Items.ContainsKey("McpHttpApiKeyRequired") ? "HTTP_API_KEY_REQUIRED" : "PROTOCOL_OR_AUTH_REJECTED");
     }
     private static async Task Reject(HttpContext context, int status, string code)
     {

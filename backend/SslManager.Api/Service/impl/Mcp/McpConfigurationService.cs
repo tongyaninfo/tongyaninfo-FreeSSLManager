@@ -26,11 +26,10 @@ public sealed class McpConfigurationService(AppDbContext db, McpRuntimeOptions r
             return ApiResult<McpSettingsView>.Fail("VALIDATION", "请输入有效且数量有界的 CIDR、Origin 和工具白名单。");
         var address = input.PublicBaseUrl?.Trim().TrimEnd('/') ?? "";
         if (address.Length > 0 && !McpNetwork.ValidBaseUrl(address))
-            return ApiResult<McpSettingsView>.Fail("VALIDATION", "公开地址必须是不含路径、查询和账号密码的 HTTPS 基址。");
+            return ApiResult<McpSettingsView>.Fail("VALIDATION", "服务基址须为不含路径、查询和账号密码的HTTP/HTTPS origin；HTTP仅允许内网IP、回环、IPv6 ULA或管理员配置的DNS主机名。");
+        if (address.Length > 0) address = McpNetwork.NormalizeOrigin(address);
         if (input.Enabled && (!runtime.Supported || address.Length == 0 || input.AllowedCidrs.Length == 0))
-            return ApiResult<McpSettingsView>.Fail("MCP_NOT_READY", "请先配置公开 HTTPS 地址和来源白名单；桌面模式不支持外部 MCP。");
-        if (input.Enabled && runtime.OAuthReady && runtime.Issuer.Length > 0 && runtime.Issuer != address)
-            return ApiResult<McpSettingsView>.Fail("MCP_RESTART_REQUIRED", "公开地址与启动时 OAuth issuer 不一致，请先更新受控 issuer 配置并重启后端。");
+            return ApiResult<McpSettingsView>.Fail("MCP_NOT_READY", "请先配置HTTP/HTTPS服务基址和来源白名单；HTTP仅支持经核验内网API Key，桌面模式不支持外部 MCP。");
         var row = await db.McpSettings.SingleOrDefaultAsync(ct);
         if (row is not null && input.ConfigRevision != row.ConfigRevision)
             return ApiResult<McpSettingsView>.Fail("CONFLICT", "MCP 配置已变化，请刷新后重试。");
@@ -40,7 +39,7 @@ public sealed class McpConfigurationService(AppDbContext db, McpRuntimeOptions r
         row.SystemName = input.SystemName.Trim();
         if (row.InstanceId.Length == 0) row.InstanceId = ids.NewId();
         row.AllowedCidrsJson = JsonSerializer.Serialize(input.AllowedCidrs.Distinct());
-        row.AllowedOriginsJson = JsonSerializer.Serialize(input.AllowedOrigins.Select(value => value.TrimEnd('/')).Distinct());
+        row.AllowedOriginsJson = JsonSerializer.Serialize(input.AllowedOrigins.Select(McpNetwork.NormalizeOrigin).Distinct());
         row.AllowedToolsJson = JsonSerializer.Serialize(input.AllowedTools.Distinct());
         row.RateLimitPerMinute = input.RateLimitPerMinute; row.MaxConcurrentCalls = input.MaxConcurrentCalls;
         row.LogRetentionDays = input.LogRetentionDays; row.UpdatedAtUtc = DateTime.UtcNow;
@@ -53,8 +52,8 @@ public sealed class McpConfigurationService(AppDbContext db, McpRuntimeOptions r
         var available = await db.McpClients.AsNoTracking().AnyAsync(x => x.Enabled && (x.ExpiresAtUtc == null || x.ExpiresAtUtc > DateTime.UtcNow), ct);
         var state = !runtime.Supported ? "Unsupported" : !row.Enabled ? "Disabled" : !available ? "NoAuthorizedClients" : "Ready";
         return ApiResult<McpStatusView>.Ok(new(runtime.Supported, row.Enabled, runtime.OAuthReady, state,
-            !runtime.Supported ? runtime.Message : runtime.OAuthReady ? "API Key 与 OAuth 已就绪；实际调用仍按授权和白名单检查。"
-                : "API Key 认证可用；OAuth 尚未配置，需要 OAuth 时再配置签名材料并重启。",
+            !runtime.Supported ? runtime.Message : runtime.OAuthReady ? "API Key可经HTTPS或核验内网HTTP使用；OAuth只在启动HTTPS issuer入口可用，实际调用仍检查授权和白名单。"
+                : "API Key可经HTTPS或核验内网HTTP使用；OAuth尚未配置，需要时配置HTTPS issuer及签名材料并重启。",
             row.PublicBaseUrl.Length == 0 ? "" : row.PublicBaseUrl + "/mcp", ["2026-07-28", "2025-11-25"], "2.3.0", runtime.ApiKeyReady,
             row.SystemName, row.InstanceId));
     }

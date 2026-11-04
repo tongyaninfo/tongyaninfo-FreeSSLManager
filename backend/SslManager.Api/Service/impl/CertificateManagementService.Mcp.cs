@@ -59,6 +59,11 @@ public sealed partial class CertificateManagementService
             { await StopMcpApplicationAsync(operation.Id, jobId, "Blocked", permission.Code, permission.Message, ct); return; }
             try
             {
+                using var cloudWrites = Common.Mcp.McpCloudMutationGuard.Enter(async token =>
+                {
+                    var current = await mcpGate!.CheckOperationAsync(operation.Id, token);
+                    if (!current.Success) throw new McpExecutionDeniedException(current.Code, "原申请授权已失效，未发送云端写入。");
+                }, operation.Id);
                 var dispatched = await DispatchApplicationInternalAsync(certificate, job, prepared.Data.Request, prepared.Data.Context, ct);
                 var publicMessage = dispatched.Success ? "原申请已派发，等待云端验证处理。" : "原申请未完成或结果待核对，请在 Web 查看关联证书任务。";
                 await db.McpOperations.Where(row => row.Id == operation.Id && row.Status == "Dispatching" && row.LeaseToken == lease)

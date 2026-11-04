@@ -60,7 +60,7 @@ public sealed partial class ConfigurationTransferService
                 settings.MaxConcurrentCalls is < 1 or > 32 || settings.LogRetentionDays is < 1 or > 365 ||
                 settings.PublicBaseUrl is null || settings.PublicBaseUrl.Length > 2048 ||
                 settings.PublicBaseUrl.Length > 0 && !McpNetwork.ValidBaseUrl(settings.PublicBaseUrl.Trim().TrimEnd('/')))
-                plan.Errors.Add(new("mcpSettings", "MCP 模式、公开 HTTPS 地址、限流、并发或日志期限无效。"));
+                plan.Errors.Add(new("mcpSettings", "MCP模式、HTTP/HTTPS服务基址、限流、并发或日志期限无效；HTTP仅用于核验内网API Key。"));
             if (settings.AllowedCidrs is null || settings.AllowedOrigins is null || settings.AllowedTools is null ||
                 settings.AllowedCidrs.Length > 100 || settings.AllowedOrigins.Length > 50 || settings.AllowedTools.Length > 100 ||
                 settings.AllowedCidrs.Any(value => value is null || !McpNetwork.ValidCidr(value)) ||

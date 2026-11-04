@@ -6,6 +6,10 @@
 
 本仓库包含**后端 + Web 前端**完整源码，以 Apache License 2.0 开源。桌面客户端不在本仓库范围内。
 
+![证书工作台：资源概览与近期到期证书](docs/assets/dashboard-zh-CN.png)
+
+> 截图使用合成演示数据：域名、账号、地址与读数均为演示用途，不代表真实环境。
+
 **当前版本：[1.1.0](CHANGELOG.md)**（以根目录 [VERSION](VERSION) 为准）
 
 ## 能力概览
@@ -20,7 +24,7 @@
 | 邮件 | SMTP 设置、测试邮件、发件记录、到期前提醒与重复汇总 |
 | 配置迁移 | 配置 JSON 导出、预览冲突、仅新增或按名称更新；导入后重新加密并保持停用 |
 | 权限与审计 | 管理员 / 只读用户，管理操作审计；MCP 客户端独立授权与调用审计 |
-| MCP | 标准 Streamable HTTP 接口：只读查询与受控操作工具；API Key + OAuth 授权码 / PKCE / 机器凭据；按工具、账号、域名、部署目标授权 |
+| MCP | 标准 Streamable HTTP 接口：50 个工具（17 个只读、33 个受控），覆盖账号、DNS、证书、部署目标、部署任务与续签计划；API Key + OAuth 授权码 / PKCE / 机器凭据；按工具、账号、域名、部署目标授权 |
 | 界面体验 | 简体中文 / English；浅色、深色、跟随系统；表格列与密度偏好 |
 
 ### 平台与部署支持
@@ -34,6 +38,19 @@
 | 使用方式 | Web（本仓库后端 + 前端） |
 
 Cloudflare 在本系统中提供 DNS 管理，不提供 Origin CA 或边缘证书签发。Windows SSH 目前仅支持手动部署。
+
+## 界面一览
+
+| 界面 | 截图 |
+| --- | --- |
+| SSL 证书管理 | ![SSL 证书管理：跨平台证书列表与操作入口](docs/assets/certificates-zh-CN.png) |
+| 申请免费 SSL 证书 | ![申请免费 SSL 证书：确认账号、域名与 DNS 验证配置](docs/assets/certificate-apply-zh-CN.png) |
+| 部署目标 | ![部署目标：目标类型、地址与最近测试状态](docs/assets/deployment-targets-zh-CN.png) |
+| 部署记录 | ![部署记录：批次、目标与执行结果](docs/assets/deployments-zh-CN.png) |
+| 计划任务 | ![计划任务：周期申请、自动部署与运行状态](docs/assets/schedules-zh-CN.png) |
+| MCP 配置 | ![MCP 管理：AI 接入状态与服务配置](docs/assets/mcp-zh-CN.png) |
+
+> 以上截图均使用合成演示数据（含 `example.com` 域名与 RFC 5737 文档地址），不代表真实环境。
 
 ## 技术栈与仓库结构
 

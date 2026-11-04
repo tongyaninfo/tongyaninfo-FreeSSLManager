@@ -42,7 +42,8 @@ public static class McpAuditCapture
         if (state.RequestRead) return;
         state.RequestRead = true;
         state.ProtocolVersion = Version(context.Request.Headers["MCP-Protocol-Version"].FirstOrDefault());
-        state.Context = state.Context with { UserAgent = McpAuditPayloads.ClientText(context.Request.Headers.UserAgent.FirstOrDefault(), 256) };
+        state.Context = state.Context with { UserAgent = McpAuditPayloads.ClientText(context.Request.Headers.UserAgent.FirstOrDefault(), 256),
+            TransportScheme = context.Request.IsHttps ? "https" : "http" };
         // 边界层已将请求放入<=256KiB内存流；不二次读取网络或启用会自动删除文件的磁盘缓冲。
         if (context.Request.Body is not MemoryStream body || body.Length > 256 * 1024) return;
         try

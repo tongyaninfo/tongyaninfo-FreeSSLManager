@@ -10,7 +10,8 @@ namespace SslManager.Api.Service.impl.Mcp;
 
 /// <summary>固定工具适配层：先实时授权和 schema 校验，再调用共享查询或持久化操作服务。</summary>
 public sealed partial class McpToolDispatcher(AppDbContext db, IMcpAuthorizationService authorization,
-    DomainManagementService domains, IDeploymentExecutorResolver executors, IMcpOperationService operations) : IMcpToolDispatcher
+    DomainManagementService domains, IDeploymentExecutorResolver executors, IMcpOperationService operations,
+    CertificateManagementService? certificateService = null) : IMcpToolDispatcher
 {
     public IReadOnlyList<McpToolDescriptor> Catalog => McpToolCatalog.All;
 
@@ -47,6 +48,7 @@ public sealed partial class McpToolDispatcher(AppDbContext db, IMcpAuthorization
             "ssl_dns_records_list" => await DnsRecordsAsync(caller, permission, arguments, ct),
             "ssl_certificates_list" => await CertificatesAsync(permission, arguments, ct),
             "ssl_certificates_get" => await CertificateAsync(permission, Text(arguments, "certificateId"), ct),
+            "ssl_certificates_validations_get" => await CertificateValidationsAsync(caller, Text(arguments, "certificateId"), ct),
             "ssl_deployment_executors_list" => ApiResult<object>.Ok(executors.List()),
             "ssl_deployment_targets_list" => await TargetsAsync(permission, arguments, ct),
             "ssl_deployments_list" => await BatchesAsync(permission, arguments, ct),
@@ -65,6 +67,12 @@ public sealed partial class McpToolDispatcher(AppDbContext db, IMcpAuthorization
             "ssl_deployment_submit" => await SubmitAsync(caller, arguments, "Deployment", ct),
             "ssl_deployment_targets_test" => Box(await operations.InvokeTargetTestAsync(caller, Text(arguments, "targetId"), Text(arguments, "idempotencyKey"), Optional(arguments, "operationId"), ct)),
             "ssl_deployment_tasks_inspect" => Box(await operations.InvokeInspectionAsync(caller, Text(arguments, "taskId"), Text(arguments, "idempotencyKey"), Optional(arguments, "operationId"), ct)),
+            "ssl_dns_records_create" or "ssl_dns_records_update" or "ssl_dns_records_delete" or "ssl_dns_records_status"
+                or "ssl_certificates_revoke" or "ssl_certificates_cancel" or "ssl_certificates_delete" or "ssl_certificates_cleanup_retry"
+                or "ssl_domains_sync" or "ssl_certificates_sync" => Box(await operations.InvokeBusinessAsync(caller, toolName, arguments,
+                    Text(arguments, "idempotencyKey"), Optional(arguments, "operationId"), ct)),
+            _ when !descriptor.ReadOnly => Box(await operations.InvokeBusinessAsync(caller, toolName, arguments,
+                Text(arguments, "idempotencyKey"), Optional(arguments, "operationId"), ct)),
             _ => Fail("TOOL_NOT_FOUND", "工具不存在或未授权。")
         };
     }

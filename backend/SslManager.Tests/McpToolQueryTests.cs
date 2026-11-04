@@ -23,14 +23,33 @@ public sealed class McpToolQueryTests
     [Fact]
     public void CatalogHasExactlyReviewedToolsAndNoSecretOrArbitraryCommandEntry()
     {
-        Assert.Equal(22, McpToolCatalog.All.Count);
-        Assert.Equal(16, McpToolCatalog.All.Count(x => x.ReadOnly));
-        Assert.Equal(22, McpToolCatalog.All.Select(x => x.Name).Distinct().Count());
+        Assert.Equal(50, McpToolCatalog.All.Count);
+        Assert.Equal(17, McpToolCatalog.All.Count(x => x.ReadOnly));
+        Assert.Equal(50, McpToolCatalog.All.Select(x => x.Name).Distinct().Count());
         foreach (var tool in McpToolCatalog.All)
         {
             Assert.False(tool.InputSchema.GetProperty("additionalProperties").GetBoolean());
-            Assert.DoesNotContain("password", tool.InputSchema.GetRawText(), StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("command", tool.InputSchema.GetRawText(), StringComparison.OrdinalIgnoreCase);
+            if (tool.Name is not ("ssl_accounts_create" or "ssl_accounts_update" or "ssl_deployment_targets_create" or "ssl_deployment_targets_update"))
+            {
+                Assert.DoesNotContain("password", tool.InputSchema.GetRawText(), StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("privateKey", tool.InputSchema.GetRawText(), StringComparison.OrdinalIgnoreCase);
+            }
+            void CheckCommands(JsonElement schema)
+            {
+                if (schema.ValueKind == JsonValueKind.Object)
+                {
+                    if (schema.TryGetProperty("properties", out var properties))
+                        foreach (var property in properties.EnumerateObject())
+                            if (property.Name.Contains("command", StringComparison.OrdinalIgnoreCase))
+                            {
+                                Assert.Equal("harborComposeCommand", property.Name);
+                                Assert.Equal(new[] { "docker compose", "docker-compose" }, property.Value.GetProperty("enum").EnumerateArray().Select(x => x.GetString()).ToArray());
+                            }
+                    foreach (var property in schema.EnumerateObject()) CheckCommands(property.Value);
+                }
+                else if (schema.ValueKind == JsonValueKind.Array) foreach (var item in schema.EnumerateArray()) CheckCommands(item);
+            }
+            CheckCommands(tool.InputSchema);
         }
         Assert.True(McpToolCatalog.RequiresAdmin("ssl_deployment_targets_list"));
         Assert.False(McpToolCatalog.RequiresAdmin("ssl_certificates_list"));
@@ -279,6 +298,7 @@ public sealed class McpToolQueryTests
         public Task<ApiResult<McpOperationView>> GetAsync(McpCallerContext c, string id, CancellationToken t) => Deny();
         public Task<ApiResult<McpOperationView>> InvokeTargetTestAsync(McpCallerContext c, string id, string k, string? op, CancellationToken t) => Deny();
         public Task<ApiResult<McpOperationView>> InvokeInspectionAsync(McpCallerContext c, string id, string k, string? op, CancellationToken t) => Deny();
+        public Task<ApiResult<McpOperationView>> InvokeBusinessAsync(McpCallerContext c, string tool, JsonElement input, string k, string? op, CancellationToken t) => Deny();
         public Task<ApiResult<McpOperationView>> ApproveAsync(string id, string user, bool approve, int version, CancellationToken t) => Deny();
         public Task<ApiResult<PageResult<McpOperationView>>> ListForAdminAsync(int page, int size, string? status, CancellationToken t) => throw new InvalidOperationException();
         public Task<ApiResult<McpOperationView>> GetForAdminAsync(string id, CancellationToken t) => Deny();

@@ -22,6 +22,8 @@ import type {
   McpTool,
 } from '@/services/ssl-manager/mcpTypes';
 import { mcpDate, mcpLines, mcpStatusText } from './presentation';
+import AgentConnection from './AgentConnection';
+import { serviceBaseUrl } from './connectionInstructions';
 
 type Values = Omit<McpSettingsInput, 'allowedCidrs' | 'allowedOrigins'> & {
   cidrsText: string;
@@ -42,6 +44,7 @@ export default function Settings() {
   const active = useRef(true);
   const pending = useRef(false);
   const enabled = Form.useWatch('enabled', form);
+  const baseUrl = Form.useWatch('publicBaseUrl', form);
   useEffect(() => {
     active.current = true;
     let current = true;
@@ -59,6 +62,10 @@ export default function Settings() {
         setSettings(configuration.data);
         form.setFieldsValue({
           ...configuration.data,
+          publicBaseUrl: serviceBaseUrl(
+            configuration.data.publicBaseUrl,
+            window.location.origin,
+          ),
           cidrsText: configuration.data.allowedCidrs.join('\n'),
           originsText: configuration.data.allowedOrigins.join('\n'),
         });
@@ -158,7 +165,7 @@ export default function Settings() {
                 {
                   key: 'url',
                   label: 'MCP 地址',
-                  children: status.mcpUrl || '尚未配置公开 HTTPS 地址',
+                  children: status.mcpUrl || '尚未保存服务基址',
                 },
                 {
                   key: 'auth',
@@ -183,6 +190,14 @@ export default function Settings() {
                   children: mcpDate(settings?.updatedAtUtc),
                 },
               ]}
+            />
+            <AgentConnection
+              profile={{
+                systemName: status.systemName,
+                instanceId: status.instanceId,
+                mcpUrl: status.supported ? status.mcpUrl : '',
+                authenticationType: 'ApiKey',
+              }}
             />
           </>
         ) : (
@@ -233,16 +248,17 @@ export default function Settings() {
             </Form.Item>
             <Form.Item
               name="publicBaseUrl"
-              label="公开 HTTPS 基址"
+              label="服务基址（HTTP / HTTPS）"
+              extra="首次或未配置时默认当前浏览器的 origin，不包含后台页面路径；已保存的自定义地址不会被覆盖。"
               rules={[
-                { required: !!enabled, message: '启用前请填写公开 HTTPS 基址' },
+                { required: !!enabled, message: '启用前请填写服务基址' },
                 {
                   validator: async (_, value) => {
                     if (!value) return;
                     try {
-                      const url = new URL(value);
+                      const url = new URL(String(value).trim());
                       if (
-                        url.protocol === 'https:' &&
+                        ['http:', 'https:'].includes(url.protocol) &&
                         url.pathname === '/' &&
                         !url.username &&
                         !url.password &&
@@ -254,14 +270,25 @@ export default function Settings() {
                       /* 统一展示校验失败。 */
                     }
                     throw new Error(
-                      '请输入不含账号、查询参数和片段的 HTTPS 地址',
+                      '请输入不含账号、路径、查询参数和片段的 HTTP / HTTPS 地址',
                     );
                   },
                 },
               ]}
             >
-              <Input placeholder="https://ssl.example.com" maxLength={2048} />
+              <Input placeholder={window.location.origin} maxLength={2048} />
             </Form.Item>
+            {String(baseUrl || '')
+              .toLowerCase()
+              .startsWith('http:') && (
+              <Alert
+                type="warning"
+                showIcon
+                title="HTTP 仅用于受信任内网的 API Key 接入，OAuth 仍须 HTTPS。"
+                description="服务端会校验真实连接、可信来源和 Host；私有网络外的 HTTP 请求会被拒绝。请确认目标 Agent 能访问此内网地址，OAuth 的发现、授权和令牌接口继续要求 HTTPS。"
+                style={{ marginBottom: 16 }}
+              />
+            )}
             <Form.Item
               name="mode"
               label="调用模式"

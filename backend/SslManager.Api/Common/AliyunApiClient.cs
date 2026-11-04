@@ -27,6 +27,7 @@ public sealed class AliyunApiClient(IHttpClientFactory clients)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, service == "cas" ? "https://cas.aliyuncs.com/" : "https://alidns.aliyuncs.com/");
             request.Content = new FormUrlEncodedContent(values);
+            if (mutation) await Mcp.McpCloudMutationGuard.CheckBeforeMutationAsync(ct);
             using var response = await clients.CreateClient("AliyunApi").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             var bytes = await CertificateDownloadHelper.ReadLimitedAsync(response.Content, 8 * 1024 * 1024, ct);
             if (!bytes.Success) return mutation ? CloudJson.TransportFailure<JsonElement>(true, "阿里云", bytes.Code) : CloudJson.Fail<JsonElement, byte[]>(bytes);

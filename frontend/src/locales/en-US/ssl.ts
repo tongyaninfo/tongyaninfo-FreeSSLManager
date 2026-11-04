@@ -17,7 +17,8 @@ export default {
   'ssl.login.submit': 'Sign in to console',
   'ssl.login.username': 'Username',
   'ssl.login.password': 'Password',
-  'ssl.login.note': 'Use the account provided by your administrator and keep your credentials safe.',
+  'ssl.login.note':
+    'Use the account provided by your administrator and keep your credentials safe.',
   'ssl.dashboard.workspace': 'Certificate workspace',
   'ssl.dashboard.accountsHint': 'Connect your cloud resources',
   'ssl.dashboard.domainsHint': 'View domains and DNS records',
@@ -27,9 +28,11 @@ export default {
   'ssl.dashboard.configureHint': 'Manage cloud accounts and sync schedules',
   'ssl.dashboard.guide': 'User guide',
   'ssl.dashboard.guideHint': 'Explore setup and workflows',
-  'ssl.dashboard.expiringNotice': '{count} certificates expire in 30 days. Showing the next 8 by expiry date.',
+  'ssl.dashboard.expiringNotice':
+    '{count} certificates expire in 30 days. Showing the next 8 by expiry date.',
   'ssl.dashboard.quickAccess': 'Quick access',
-  'ssl.dashboard.dataHint': 'Based on the resources currently synchronized. Check management pages for the latest status.',
+  'ssl.dashboard.dataHint':
+    'Based on the resources currently synchronized. Check management pages for the latest status.',
   'ssl.dashboard.providerHint': 'Certificates grouped by cloud provider',
   'ssl.app.name': '通研FREE SSL管理',
   'ssl.menu.configuration': 'Configuration',
@@ -132,6 +135,7 @@ export default {
   'ssl.dashboard.expiry': 'Expires at',
   'ssl.page.configuration.cloudAccounts': 'Cloud accounts',
   'ssl.page.configuration.syncSchedules': 'Sync schedules',
+  'ssl.page.configuration.nextSyncAt': 'Next sync',
   'ssl.page.domains.title': 'Domain management',
   'ssl.page.domains.records': 'DNS records',
   'ssl.page.certificates.title': 'SSL certificate management',

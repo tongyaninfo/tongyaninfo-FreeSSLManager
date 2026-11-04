@@ -10,6 +10,7 @@ using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using SslManager.Api.Data;
 using SslManager.Api.Models.Mcp;
+using SslManager.Api.Common.Mcp;
 using SslManager.Api.Service.impl.Mcp;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -17,7 +18,7 @@ namespace SslManager.Api.Controllers;
 
 /// <summary>标准 OAuth 授权码/PKCE 与机器流程；实际登录用户必须等于客户端绑定用户。</summary>
 public sealed class McpOAuthController(AppDbContext db, IOpenIddictAuthorizationManager authorizations,
-    IAntiforgery antiforgery) : Controller
+    IAntiforgery antiforgery, McpRuntimeOptions runtime) : Controller
 {
     private const string Scheme = OpenIddictServerAspNetCoreDefaults.AuthenticationScheme;
 
@@ -100,7 +101,9 @@ public sealed class McpOAuthController(AppDbContext db, IOpenIddictAuthorization
         if (scopes.Any(scope => scope != Scopes.OfflineAccess && !configured.Contains(scope))
             || scopes.Contains("mcp.write") && user.Role != "admin") return null;
         var resources = request.GetResources();
-        var expected = settings.PublicBaseUrl + "/mcp";
+        var oauthAddress = runtime.OAuthBaseUrl(settings.PublicBaseUrl);
+        if (oauthAddress.Length == 0) return null;
+        var expected = oauthAddress + "/mcp";
         if (original is null && (resources.Length != 1 || resources[0] != expected)) return null;
         if (original is not null && (!original.GetResources().SequenceEqual(new[] { expected })
             || resources.Length > 0 && !resources.SequenceEqual(new[] { expected }))) return null;
@@ -115,7 +118,7 @@ public sealed class McpOAuthController(AppDbContext db, IOpenIddictAuthorization
         identity.SetClaim(Claims.Subject, user.Id).SetClaim(Claims.Name, user.Username).SetClaim(Claims.Role, user.Role)
             .SetClaim("mcp_client", client.ClientId);
         var principal = new ClaimsPrincipal(identity);
-        principal.SetScopes(scopes); principal.SetResources(settings.PublicBaseUrl + "/mcp"); principal.SetPresenters(client.ClientId);
+        principal.SetScopes(scopes); principal.SetResources(runtime.OAuthBaseUrl(settings.PublicBaseUrl) + "/mcp"); principal.SetPresenters(client.ClientId);
         var descriptor = new OpenIddictAuthorizationDescriptor { ApplicationId = client.OAuthApplicationId, Subject = user.Id,
             Status = Statuses.Valid, Type = AuthorizationTypes.Permanent, CreationDate = DateTimeOffset.UtcNow, Principal = principal };
         descriptor.Scopes.UnionWith(scopes);

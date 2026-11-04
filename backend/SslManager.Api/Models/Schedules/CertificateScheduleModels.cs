@@ -132,6 +132,8 @@ public sealed class ScheduleCertificateCleanup
 /// <summary>仅序列化到现有运行 JSON 的内部恢复快照，不增加数据库列或公开输入字段。</summary>
 internal sealed class CertificateScheduleRunSnapshot : CertificateScheduleInput
 {
+    /// <summary>MCP 创建的计划轮次保留原授权来源，恢复快照序列化时不能丢失。</summary>
+    public string McpOperationId { get; set; } = "";
     public int RecoveryVersion { get; set; } = 1;
     public int RecoveryAttempts { get; set; }
     public ScheduleApplicationDnsCleanup? ApplicationCleanup { get; set; }

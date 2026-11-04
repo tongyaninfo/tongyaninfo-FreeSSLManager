@@ -11,6 +11,10 @@ export function parseMcpContext(value?: string): McpCallContext | undefined {
       return undefined;
     const record = parsed as Record<string, unknown>;
     return {
+      transportScheme:
+        record.transportScheme === 'http' || record.transportScheme === 'https'
+          ? record.transportScheme
+          : undefined,
       userAgent:
         typeof record.userAgent === 'string' ? record.userAgent : undefined,
       systemName:
@@ -88,6 +92,11 @@ export default function AuditContext({
         column={1}
         size="small"
         items={[
+          {
+            key: 'transport',
+            label: '传输协议',
+            children: context.transportScheme?.toUpperCase() || '未采集',
+          },
           {
             key: 'ua',
             label: 'User-Agent（自报）',

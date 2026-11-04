@@ -65,7 +65,7 @@ public sealed class McpManagementHttpTests
         Assert.False(status.GetProperty("enabled").GetBoolean());
         Assert.False(status.GetProperty("oAuthReady").GetBoolean());
         var tools = (await ReadAsync(await client.GetAsync("/api/mcp/tools"))).GetProperty("data");
-        Assert.Equal(22, tools.GetArrayLength());
+        Assert.Equal(50, tools.GetArrayLength());
         client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/mcp/settings", new { enabled = false })).StatusCode);
         await CsrfAsync(client);

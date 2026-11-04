@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SslManager.Api.Common;
+using SslManager.Api.Common.Mcp;
 using SslManager.Api.Data;
 using SslManager.Api.Models;
 
@@ -21,15 +22,17 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
     private readonly ILogger<CertificateScheduleService> logger;
     private readonly IServiceScopeFactory? scopes;
     private readonly CertificateRevocationDnsService revocationDns;
+    private readonly IMcpExecutionGate? mcpGate;
 
     public CertificateScheduleService(AppDbContext db, CertificateManagementService certificates, ICloudAccountStore accounts,
         ICloudProviderResolver providers, IDeploymentService deployments, IDeploymentTargetService targets, IIdGenerator ids,
         ILogger<CertificateScheduleService>? logger = null, IServiceScopeFactory? scopes = null,
-        CertificateRevocationDnsService? revocationDns = null)
+        CertificateRevocationDnsService? revocationDns = null, IMcpExecutionGate? mcpGate = null)
     {
         this.db = db; this.certificates = certificates; this.accounts = accounts; this.providers = providers;
         this.deployments = deployments; this.targets = targets; this.ids = ids;
         this.logger = logger ?? NullLogger<CertificateScheduleService>.Instance; this.scopes = scopes;
+        this.mcpGate = mcpGate;
         this.revocationDns = revocationDns ?? new(db, new DomainManagementService(db, accounts, providers, ids));
     }
 
@@ -41,6 +44,7 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
         if (await db.CertificateScheduleRuns.AnyAsync(item => item.ScheduleId == id && item.Active, ct))
             return ApiResult<CertificateScheduleRunView>.Fail("RUN_ACTIVE", "本计划已有未结束或待核对轮次。");
         var run = CreateRun(schedule, "manual:" + ids.NewId(), DateTime.UtcNow);
+        await AttachMcpScheduleOriginAsync(run, ct);
         db.CertificateScheduleRuns.Add(run);
         Audit(run, "ScheduleRunRequested", "MANUAL", "已请求立即执行，周期锚点保持不变。");
         try { await db.SaveChangesAsync(ct); }
@@ -80,8 +84,9 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
         run.Code = "MANUALLY_RESOLVED"; run.Message = "管理员核对后结束本轮：" + note.Trim();
         run.LeaseToken = ids.NewId(); run.LeaseUntilUtc = null;
         Audit(run, "ScheduleRunResolved", run.Code, run.Message);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        try { await AdvanceScheduleAfterRunAsync(run.ScheduleId, ct); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
+        // MCP 需要把业务结果与来源同事务保存；已有事务时不重复开启 SQLite 事务。
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try { await AdvanceScheduleAfterRunAsync(run.ScheduleId, ct); await db.SaveChangesAsync(ct); if (transaction is not null) await transaction.CommitAsync(ct); }
         catch (DbUpdateConcurrencyException) { return ApiResult<CertificateScheduleRunView>.Fail("CONFLICT", "运行状态已变化，请刷新。"); }
         return ApiResult<CertificateScheduleRunView>.Ok(ToRunView(run), "已结束本轮；已有证书及部署批次保留，不重放未知动作。");
     }
@@ -133,6 +138,11 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (DbUpdateConcurrencyException) { /* 租约已被接管，旧执行者不写回状态。 */ }
+        catch (McpExecutionDeniedException exception)
+        {
+            // 已发生的远端写入不声称回滚；停止后续写入并保留原轮次供管理员核对。
+            await AttentionAsync(run, token, exception.Code, "MCP 原调用授权已撤销，已停止本轮后续写入，保留原现场供核对。", CancellationToken.None);
+        }
         catch (Exception exception)
         {
             logger.LogWarning("周期任务推进中断，运行={RunId}，异常类型={ExceptionType}", run.Id, exception.GetType().Name);
@@ -166,6 +176,7 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.NextRunAtUtc, next), ct);
         if (changed != 1) return;
         var run = CreateRun(schedule, "scheduled:" + due.Ticks, due);
+        await AttachMcpScheduleOriginAsync(run, ct);
         db.CertificateScheduleRuns.Add(run);
         Audit(run, "ScheduleRunRequested", "SCHEDULED", "周期已到，已保存本轮执行记录；停机错过多个周期只补一轮。");
         try { await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
@@ -186,6 +197,15 @@ public sealed partial class CertificateScheduleService : ICertificateScheduleSer
 
     private async Task AdvanceAsync(CertificateScheduleRun run, string token, CancellationToken ct)
     {
+        var allowed = await CheckMcpScheduleOriginAsync(run, ct);
+        if (!allowed.Success)
+        { await AttentionAsync(run, token, allowed.Code, "MCP 计划原调用授权或业务范围已经变化，已停止本轮写入，请核对原操作。", ct); return; }
+        // 远端服务内部可能先读再写，统一在每次真实云写发送前复查原 Key，不能只检查 Worker 入口。
+        using var mutationScope = McpCloudMutationGuard.Enter(async cancellation =>
+        {
+            var current = await CheckMcpScheduleOriginAsync(run, cancellation);
+            if (!current.Success) throw new McpExecutionDeniedException(current.Code, current.Message);
+        }, McpScheduleOrigin.ReadOperationId(run.ConfigSnapshotJson));
         await FenceAsync(run, token, ct);
         var input = Read<CertificateScheduleRunSnapshot>(run.ConfigSnapshotJson) ?? throw new InvalidOperationException("周期配置快照缺失。");
         if (input.RecoveryVersion != 1)

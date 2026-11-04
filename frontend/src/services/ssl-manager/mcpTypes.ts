@@ -100,6 +100,7 @@ export interface McpConnectionProfile {
   systemName: string;
   instanceId: string;
   mcpUrl: string;
+  oauthMcpUrl?: string;
   clientId: string;
   transport: string;
   grantType: McpClientInput['grantType'];
@@ -141,6 +142,7 @@ export interface McpCallLog {
   occurrenceCount?: number;
 }
 export interface McpCallContext {
+  transportScheme?: 'http' | 'https';
   userAgent?: string;
   systemName?: string;
   instanceId?: string;

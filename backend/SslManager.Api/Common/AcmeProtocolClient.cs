@@ -94,6 +94,10 @@ public sealed class AcmeProtocolClient(IHttpClientFactory clients)
                 using var content = new StringContent(body, Encoding.UTF8);
                 content.Headers.ContentType = new MediaTypeHeaderValue("application/jose+json");
                 using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                // POST-as-GET及onlyReturnExisting只读查询不算写入；下单、接受挑战、finalize和注册逐次复核。
+                var existingAccountLookup = registration && payload is not null && JsonSerializer.SerializeToElement(payload)
+                    .TryGetProperty("onlyReturnExisting", out var existingOnly) && existingOnly.ValueKind == JsonValueKind.True;
+                if (payload is not null && !existingAccountLookup) await Mcp.McpCloudMutationGuard.CheckBeforeMutationAsync(ct);
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 nonce = Nonce(response);
                 var parsed = await ReadAsync(response, ct, registration);

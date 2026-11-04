@@ -97,6 +97,22 @@ public sealed class McpAuditTests
     }
 
     [Fact]
+    public void DnsWriteAuditsKeepRecordIdentityWithoutDnsValueOrRevocationReason()
+    {
+        var input = McpAuditPayloads.Input("ssl_dns_records_update", JsonSerializer.SerializeToElement(new
+        { zoneId = "zone-1", recordId = "record-1", name = "_acme-challenge", type = "TXT", value = "synthetic-secret-txt", idempotencyKey = "synthetic-secret-key" }));
+        Assert.Equal("record-1", input.Value.GetProperty("recordId").GetString());
+        Assert.DoesNotContain("synthetic-secret", input.Value.GetRawText()); Assert.False(input.Truncated);
+        var status = McpAuditPayloads.Input("ssl_dns_records_status", JsonSerializer.SerializeToElement(new { recordId = "record-1", enabled = false }));
+        Assert.False(status.Value.GetProperty("enabled").GetBoolean());
+        var revoke = McpAuditPayloads.Input("ssl_certificates_revoke", JsonSerializer.SerializeToElement(new { certificateId = "cert-1", reason = "keyCompromise" }));
+        Assert.False(revoke.Value.TryGetProperty("reason", out _));
+        var output = McpAuditPayloads.Output(JsonSerializer.SerializeToElement(new { data = new { recordId = "record-1", value = "synthetic-secret-txt" } }));
+        Assert.Equal("record-1", output.Value.GetProperty("data").GetProperty("recordId").GetString());
+        Assert.DoesNotContain("synthetic-secret", output.Value.GetRawText());
+    }
+
+    [Fact]
     public void SnapshotsRespectUtf8BudgetAndPersistActualJsonNullSeparatelyFromMissing()
     {
         var input = McpAuditPayloads.Input("ssl_certificates_get", JsonSerializer.SerializeToElement<object?>(null));

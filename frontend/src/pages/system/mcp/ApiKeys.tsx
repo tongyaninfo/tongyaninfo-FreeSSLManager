@@ -22,12 +22,9 @@ import type {
   McpClient,
 } from '@/services/ssl-manager/mcpTypes';
 import { mcpConnectionName, mcpDate } from './presentation';
-
-/** 不同系统使用不同环境变量，避免多服务共用同一个变量而误发密钥。 */
-export function apiKeyEnvironmentName(instanceId: string): string {
-  const suffix = instanceId.replace(/[^A-Za-z0-9_]+/g, '_').toUpperCase();
-  return suffix ? `MCP_API_KEY_${suffix}` : 'MCP_API_KEY';
-}
+import AgentConnection from './AgentConnection';
+import { apiKeyEnvironmentName, copyMcpText } from './connectionInstructions';
+export { apiKeyEnvironmentName } from './connectionInstructions';
 
 /** 模板只含环境变量占位符，绝不混入当前一次展示的明文密钥。 */
 export function apiKeyConnectionTemplate(
@@ -327,9 +324,17 @@ export default function ApiKeys({
           {
             key: 'url',
             label: 'MCP 地址',
-            children: mcpUrl || '请先在服务设置中配置公开 HTTPS 基址',
+            children: mcpUrl || '请先在服务设置中保存 HTTP / HTTPS 服务基址',
           },
         ]}
+      />
+      <AgentConnection
+        profile={{
+          ...identity,
+          mcpUrl,
+          authenticationType: 'ApiKey',
+          clientId: client.clientId,
+        }}
       />
       <Alert
         type="warning"
@@ -463,7 +468,7 @@ export default function ApiKeys({
           onClick={async () => {
             if (!secret) return;
             try {
-              await navigator.clipboard.writeText(secret.apiKey);
+              await copyMcpText(secret.apiKey);
               setCopyError('');
             } catch {
               setCopyError('浏览器未允许复制，请在密钥框内手动复制。');
@@ -472,6 +477,19 @@ export default function ApiKeys({
         >
           复制 API Key
         </Button>
+        {secret && (
+          <div style={{ marginTop: 16 }}>
+            <AgentConnection
+              profile={{
+                ...identity,
+                mcpUrl,
+                authenticationType: 'ApiKey',
+                clientId: client.clientId,
+              }}
+              apiKey={secret.apiKey}
+            />
+          </div>
+        )}
       </Drawer>
     </Space>
   );

@@ -11,7 +11,7 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace SslManager.Api.Service.impl.Mcp;
 
 /// <summary>客户端及 OAuth 注册同事务保存，秘密只在显式创建或轮换时返回一次。</summary>
-public sealed class McpClientService(AppDbContext db, IOpenIddictApplicationManager applications, IIdGenerator ids) : IMcpClientService
+public sealed class McpClientService(AppDbContext db, IOpenIddictApplicationManager applications, IIdGenerator ids, McpRuntimeOptions runtime) : IMcpClientService
 {
     public async Task<ApiResult<PageResult<McpClientView>>> ListAsync(int page, int pageSize, CancellationToken ct, string? search = null)
     {
@@ -148,10 +148,11 @@ public sealed class McpClientService(AppDbContext db, IOpenIddictApplicationMana
         if (row is null) return Fail<McpConnectionProfile>("NOT_FOUND", "客户端不存在。");
         var settings = await db.McpSettings.AsNoTracking().SingleOrDefaultAsync(ct);
         var address = settings?.PublicBaseUrl ?? "";
-        if (!McpNetwork.ValidBaseUrl(address)) return Fail<McpConnectionProfile>("MCP_NOT_READY", "请先保存有效的公开 HTTPS 基址，再生成连接模板。");
+        if (!McpNetwork.ValidBaseUrl(address)) return Fail<McpConnectionProfile>("MCP_NOT_READY", "请先保存有效的HTTP/HTTPS服务基址，再生成连接模板。");
+        var oauthAddress = runtime.OAuthBaseUrl(address);
         return ApiResult<McpConnectionProfile>.Ok(new(address + "/mcp", row.ClientId, "streamable-http", row.GrantType,
-            McpConfigurationService.Strings(row.ScopesJson), address + "/oauth/mcp/authorize", address + "/oauth/mcp/token",
-            settings?.SystemName ?? "Free SSL Manager", settings?.InstanceId ?? ""));
+            McpConfigurationService.Strings(row.ScopesJson), oauthAddress.Length == 0 ? "" : oauthAddress + "/oauth/mcp/authorize", oauthAddress.Length == 0 ? "" : oauthAddress + "/oauth/mcp/token",
+            settings?.SystemName ?? "Free SSL Manager", settings?.InstanceId ?? "", oauthAddress.Length == 0 ? "" : oauthAddress + "/mcp"));
     }
     private async Task<string?> ValidateAsync(McpClientInput input, CancellationToken ct)
     {
@@ -186,7 +187,10 @@ public sealed class McpClientService(AppDbContext db, IOpenIddictApplicationMana
     private async Task AddResourceAsync(OpenIddictApplicationDescriptor descriptor, CancellationToken ct)
     {
         var address = await db.McpSettings.AsNoTracking().Select(x => x.PublicBaseUrl).SingleOrDefaultAsync(ct);
-        if (address is not null && McpNetwork.ValidBaseUrl(address)) descriptor.AddResourcePermissions(address + "/mcp");
+        var oauthAddress = runtime.OAuthBaseUrl(address ?? "");
+        // 尚未配置签名材料时保留原HTTPS客户端的资源登记；HTTP基址永远不能成为OAuth audience。
+        if (oauthAddress.Length == 0 && address is not null && McpNetwork.ValidHttpsOrigin(address)) oauthAddress = McpNetwork.NormalizeOrigin(address);
+        if (oauthAddress.Length > 0) descriptor.AddResourcePermissions(oauthAddress + "/mcp");
     }
     private static OpenIddictApplicationDescriptor Descriptor(string id, McpClientInput input, string? secret)
     {

@@ -15,6 +15,9 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
     internal static readonly SemaphoreSlim OperationGate = new(1, 1);
 
     public async Task<ApiResult<int>> SyncAsync(string accountId, CancellationToken ct)
+        => await SyncCoreAsync(accountId, null, ct);
+
+    private async Task<ApiResult<int>> SyncCoreAsync(string accountId, Func<CancellationToken, Task>? beforeWrite, CancellationToken ct)
     {
         var context = await ResolveAccountAsync(accountId, ct);
         if (!context.Success || context.Data is null) return ApiResult<int>.Fail(context.Code, context.Message);
@@ -24,6 +27,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             // 云端快照和本地合并必须与删除串行，避免删除前抓取的旧快照在删除完成后重新入库。
             var response = await context.Data.Provider.ListAsync(context.Data.Account, ct);
             if (!response.Success || response.Data is null) return ApiResult<int>.Fail(response.Code, response.Message);
+            if (beforeWrite is not null) await beforeWrite(ct);
             var existing = await db.Certificates.Where(x => x.AccountId == accountId).ToListAsync(ct);
             foreach (var cloud in response.Data)
             {
@@ -188,10 +192,12 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             if (item.Status is not ("Issued" or "Expired")) return ApiResult<CloudOperation>.Fail("INVALID_STATE", "仅已签发或已过期证书可发起吊销");
             var context = await ResolveAccountAsync(item.AccountId, ct);
             if (!context.Success || context.Data is null) return ApiResult<CloudOperation>.Fail(context.Code, context.Message);
+            await DemandMcpMaintenanceWriteAsync(ct, firstWrite: true);
             var originalStatus = item.Status;
             item.Status = "Revoking";
             var job = new CertificateJob { Id = ids.NewId(), CertificateId = id, Kind = "Revoke", Status = "Submitting", CreatedAtUtc = DateTime.UtcNow, NextRunAtUtc = DateTime.UtcNow };
             db.CertificateJobs.Add(job);
+            await LinkMcpMaintenanceJobAsync(job, ct);
             await db.SaveChangesAsync(ct);
             var result = await context.Data.Provider.RevokeAsync(context.Data.Account, Reference(item), reason, ct);
             job.Status = result.Success ? "Waiting" : IsUncertain(result.Code) ? "SubmissionUnknown" : "Failed";
@@ -225,6 +231,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                 return ApiResult<CloudOperation>.Fail("CANCEL_STATE_NOT_ALLOWED", "仅待验证或审核中的证书申请可以取消审核。");
             var context = await ResolveAccountAsync(item.AccountId, ct);
             if (!context.Success || context.Data is null) return ApiResult<CloudOperation>.Fail(context.Code, context.Message);
+            await DemandMcpMaintenanceWriteAsync(ct, firstWrite: true);
             var result = await context.Data.Provider.CancelAsync(context.Data.Account, Reference(item), ct);
             if (!result.Success || result.Data is null)
             {
@@ -234,6 +241,20 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                     item.Status = "Processing";
                     item.RawStatus = "Cancelling";
                     item.SyncedAtUtc = DateTime.UtcNow;
+                    if (mcpMaintenanceOperationId is not null)
+                    {
+                        // 取消结果未知时冻结原申请Job，禁止它继续建DNS或推进签发，等待只读核对。
+                        var uncertain = await db.CertificateJobs.Where(x => x.CertificateId == id && x.Kind == "Apply")
+                            .OrderByDescending(x => x.CreatedAtUtc).FirstOrDefaultAsync(ct);
+                        if (uncertain is null)
+                        {
+                            uncertain = new CertificateJob { Id = ids.NewId(), CertificateId = id, CreatedAtUtc = DateTime.UtcNow };
+                            db.CertificateJobs.Add(uncertain);
+                        }
+                        uncertain.Kind = "Cancel"; uncertain.Status = "SubmissionUnknown";
+                        uncertain.Message = "原 MCP 取消提交结果未知，保留同一申请等待人工核对，未继续申请。";
+                        await LinkMcpMaintenanceJobAsync(uncertain, ct);
+                    }
                     await db.SaveChangesAsync(ct);
                 }
                 return result;
@@ -248,9 +269,15 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                 .OrderByDescending(x => x.CreatedAtUtc).FirstOrDefaultAsync(ct);
             if (applyJob is not null)
             {
+                if (mcpMaintenanceOperationId is not null) { applyJob.Kind = "Cancel"; await LinkMcpMaintenanceJobAsync(applyJob, ct); }
                 applyJob.Status = item.Status == "Cancelled" ? "Completed" : "Waiting";
                 applyJob.Message = item.Status == "Cancelled" ? "申请已取消" : "等待云端确认取消审核";
                 applyJob.NextRunAtUtc = DateTime.UtcNow.AddSeconds(30);
+            }
+            else if (mcpMaintenanceOperationId is not null && item.Status != "Cancelled")
+            {
+                var cancelJob = new CertificateJob { Id = ids.NewId(), CertificateId = id, Kind = "Cancel", Status = "Waiting", CreatedAtUtc = DateTime.UtcNow, NextRunAtUtc = DateTime.UtcNow };
+                db.CertificateJobs.Add(cancelJob); await LinkMcpMaintenanceJobAsync(cancelJob, ct);
             }
             if (item.Status == "Cancelled") await CleanupAsync(item, ct);
             await db.SaveChangesAsync(ct);
@@ -291,6 +318,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                 return ApiResult<CloudOperation>.Fail("EXPIRED_CERTIFICATE_REQUIRED", "证书有效期尚未结束，已阻止删除");
             var context = await ResolveAccountAsync(item.AccountId, ct);
             if (!context.Success || context.Data is null) return ApiResult<CloudOperation>.Fail(context.Code, context.Message);
+            await DemandMcpMaintenanceWriteAsync(ct, firstWrite: true);
             await ArchiveApplicationCleanupBeforeRemovalAsync(item, ct);
             var result = await context.Data.Provider.DeleteAsync(context.Data.Account, Reference(item), ct);
             if (!result.Success || result.Data is null)
@@ -322,6 +350,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                         CreatedAtUtc = DateTime.UtcNow, NextRunAtUtc = DateTime.UtcNow };
                     db.CertificateJobs.Add(job);
                 }
+                await LinkMcpMaintenanceJobAsync(job, ct);
                 job.RequestId = result.Data.RequestId;
                 job.Message = result.Message + (string.IsNullOrWhiteSpace(result.Data.TaskId) ? "" : $" TaskId：{result.Data.TaskId}");
                 job.NextRunAtUtc = DateTime.UtcNow;
@@ -357,9 +386,11 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
         var item = await db.Certificates.FindAsync([id], ct);
         if (item is null) return ApiResult<bool>.Fail("NOT_FOUND", "证书不存在");
         if (!item.AutoCleanup || item.Status != "Issued") return ApiResult<bool>.Fail("INVALID_STATE", "仅签发成功且开启自动清理的申请可重试清理");
+        await DemandMcpMaintenanceWriteAsync(ct, firstWrite: true);
         item.CleanupStatus = "Pending";
         var job = new CertificateJob { Id = ids.NewId(), CertificateId = id, Kind = "Cleanup", Status = "Waiting", CreatedAtUtc = DateTime.UtcNow, NextRunAtUtc = DateTime.UtcNow };
         db.CertificateJobs.Add(job);
+        await LinkMcpMaintenanceJobAsync(job, ct);
         await db.SaveChangesAsync(ct);
         return ApiResult<bool>.Ok(true, "已安排清理核验任务");
     }
@@ -470,11 +501,12 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             await SaveAsync();
             if (mcpGate is not null)
             {
-                var allowed = await mcpGate.CheckCertificateAsync(snapshot.CertificateId, ct);
+                var allowed = await CheckMcpCertificateWriteAsync(snapshot.CertificateId, ct);
                 if (!allowed.Success) return ApiResult<bool>.Fail(allowed.Code, allowed.Message);
             }
             ApiResult<CloudOperation> deleted;
             try { deleted = await context.Data.Provider.DeleteRecordAsync(context.Data.Account, context.Data.Domain.Name, record.RecordId, ct); }
+            catch (McpExecutionDeniedException) { throw; }
             catch (Exception) when (!ct.IsCancellationRequested)
             { record.Status = "DeletionUnknown"; record.Message = "申请验证 DNS 删除响应中断，将查询同一记录确认。"; await SaveAsync(); return ApiResult<bool>.Ok(false, record.Message); }
             record.Status = deleted.Success || IsUncertain(deleted.Code) ? "DeletionUnknown" : "Created";
@@ -591,6 +623,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
         // MCP 首次派发由同一个持久证书队列承载，与普通 Submitting 的未知结果恢复严格区分。
         if (await db.CertificateJobs.AsNoTracking().AnyAsync(row => row.Id == jobId && row.Status == "McpQueued", ct))
         { await DispatchMcpApplicationAsync(jobId, ct); return; }
+        var previousMaintenanceOperation = mcpMaintenanceOperationId;
         await OperationGate.WaitAsync(ct);
         try
         {
@@ -598,9 +631,28 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             if (job is null || job.Status is not ("Waiting" or "Submitting")) return;
             var item = await db.Certificates.FindAsync([job.CertificateId], ct);
             if (item is null) { job.Status = "Failed"; job.Message = "本地证书不存在"; await db.SaveChangesAsync(ct); return; }
+            mcpMaintenanceOperationId = await db.McpOperations.AsNoTracking().Where(x => (x.Kind == "Business" || x.Kind == "ScheduleMaintenance") && x.CertificateJobId == jobId)
+                .OrderByDescending(x => x.CreatedAtUtc).Select(x => x.Id).FirstOrDefaultAsync(ct);
+            using var cloudWrites = Common.Mcp.McpCloudMutationGuard.Enter(async token =>
+            {
+                var allowed = await CheckMcpCertificateWriteAsync(item.Id, token);
+                if (!allowed.Success) throw new McpExecutionDeniedException(allowed.Code, "原 MCP 证书任务授权已撤销，未发送云端写入。");
+            }, mcpMaintenanceOperationId);
+            if (mcpMaintenanceOperationId is not null)
+            {
+                var allowed = await CheckMcpCertificateWriteAsync(item.Id, ct);
+                if (!allowed.Success)
+                {
+                    job.Status = "Failed"; job.Message = "原 MCP 维护授权已失效，任务已停止。";
+                    await db.McpOperations.Where(x => x.Id == mcpMaintenanceOperationId).ExecuteUpdateAsync(update => update
+                        .SetProperty(x => x.Status, "Blocked").SetProperty(x => x.Code, "MCP_AUTHORIZATION_REVOKED"), ct);
+                    await db.SaveChangesAsync(ct); return;
+                }
+            }
             if (job.Kind.Equals("Delete", StringComparison.OrdinalIgnoreCase))
             {
                 await ProcessDeleteJobAsync(job, item, ct);
+                await RefreshMcpMaintenanceJobAsync(jobId, job.Status, ct);
                 return;
             }
             if (job.Status == "Submitting" && job.Kind == "Apply" && item.Provider == "Acme")
@@ -636,6 +688,12 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
                 job.Status = item.Status == "Revoked" ? "Completed" : "Waiting";
                 job.Message = item.Status == "Revoked" ? "云端已确认吊销" : "等待云端确认吊销，若需验证请查看验证记录";
             }
+            else if (job.Kind == "Cancel")
+            {
+                job.Status = item.Status == "Cancelled" ? "Completed" : "Waiting";
+                job.Message = "核对原申请取消状态，不继续申请或创建验证记录。";
+                if (item.Status == "Cancelled") await CleanupAsync(item, ct);
+            }
             else if (item.Status == "Issued")
             {
                 if (item.AutoCleanup && item.ValidationMode is ("NativeAutoDns" or "ManagedDns")) await CleanupAsync(item, ct);
@@ -660,7 +718,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             if (job.Kind == "Apply" && item.Provider == "Acme" && item.Status is ("PendingValidation" or "Processing"))
             {
                 // DNS-01 接受挑战与 finalize 均有副作用，只能由已授权的申请任务推进。
-                var allowed = mcpGate is null ? ApiResult<bool>.Ok(true) : await mcpGate.CheckCertificateAsync(item.Id, ct);
+                var allowed = await CheckMcpCertificateWriteAsync(item.Id, ct);
                 if (allowed.Success)
                 {
                     var advanced = await context.Data.Provider.ContinueApplicationAsync(context.Data.Account, Reference(item), ct);
@@ -677,8 +735,9 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             job.LeaseUntilUtc = null;
             await db.SaveChangesAsync(ct);
             await RefreshMcpApplicationStateAsync(job.Id, job.Status, job.Message, ct);
+            await RefreshMcpMaintenanceJobAsync(job.Id, job.Status, ct);
         }
-        finally { OperationGate.Release(); }
+        finally { mcpMaintenanceOperationId = previousMaintenanceOperation; OperationGate.Release(); }
     }
 
     private async Task ProvisionDnsAsync(ManagedCertificate item, CancellationToken ct)
@@ -713,10 +772,11 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
             ApiResult<DnsRecord> created;
             if (mcpGate is not null)
             {
-                var allowed = await mcpGate.CheckCertificateAsync(item.Id, ct);
+                var allowed = await CheckMcpCertificateWriteAsync(item.Id, ct);
                 if (!allowed.Success) { record.Status = "Blocked"; record.Message = allowed.Message; await db.SaveChangesAsync(ct); continue; }
             }
             try { created = await context.Data.Provider.CreateRecordAsync(context.Data.Account, context.Data.Domain.Name, new(relative, record.Type, record.Value), ct); }
+            catch (McpExecutionDeniedException) { throw; }
             catch (Exception) when (!ct.IsCancellationRequested)
             { record.Status = "CreationUnknown"; record.Message = "DNS 创建响应中断，等待只读核对原记录"; await db.SaveChangesAsync(ct); continue; }
             if (!created.Success || created.Data is null || string.IsNullOrEmpty(created.Data.Id) ||
@@ -805,6 +865,7 @@ public sealed partial class CertificateManagementService(AppDbContext db, ICloud
 
     private async Task RemoveLocalCertificateAsync(ManagedCertificate item, CancellationToken ct)
     {
+        await DemandMcpMaintenanceWriteAsync(ct);
         // 同步或异步删除也可能移除证书；先把清理材料转入已有运行 JSON，不能随验证行一起丢失。
         await ArchiveApplicationCleanupBeforeRemovalAsync(item, ct);
         var records = await db.ValidationRecords.Where(x => x.CertificateId == item.Id).ToListAsync(ct);

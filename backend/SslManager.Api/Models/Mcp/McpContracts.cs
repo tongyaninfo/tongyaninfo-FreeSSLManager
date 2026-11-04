@@ -63,7 +63,7 @@ public sealed record McpToolDescriptor(string Name, string Title, string Descrip
 public sealed record McpCallerContext(string ClientId, string EffectiveUserId, string AuthorizationId,
     string[] Scopes, string SourceIp, string Role = "", string TraceId = "", string RemoteIp = "",
     string AuthenticationType = "OAuth", string ApiKeyId = "");
-public sealed record McpResourceScope(string AccountId = "", string Domain = "", string TargetId = "");
+public sealed record McpResourceScope(string AccountId = "", string Domain = "", string TargetId = "", string ScheduleId = "");
 public sealed record McpEffectivePermission(int SettingsRevision, int ClientRevision, int PolicyRevision,
     IReadOnlyList<McpAllowRuleInput> Rules, bool Preauthorized = false);
 public sealed record McpApprovalInput(int Version, string Note = "");
@@ -74,7 +74,8 @@ public sealed record McpOperationView(string Id, string Kind, string ToolName, s
     int Version, DateTime CreatedAtUtc, DateTime UpdatedAtUtc, string Message, string Code, string SummaryJson = "{}",
     string ClientId = "", string ArgumentsDigest = "", bool CanApprove = false);
 public sealed record McpConnectionProfile(string McpUrl, string ClientId, string Transport, string GrantType,
-    string[] Scopes, string AuthorizationUrl, string TokenUrl, string SystemName = "Free SSL Manager", string InstanceId = "");
+    string[] Scopes, string AuthorizationUrl, string TokenUrl, string SystemName = "Free SSL Manager", string InstanceId = "",
+    [property: System.Text.Json.Serialization.JsonPropertyName("oauthMcpUrl")] string OAuthMcpUrl = "");
 public sealed record McpInvocationQuery(int Page = 1, int PageSize = 20, string? ClientId = null,
     string? ToolName = null, string? Status = null, string? Code = null, string? SourceIp = null,
     DateTime? FromUtc = null, DateTime? ToUtc = null, string? ApiKeyId = null, string? Method = null,

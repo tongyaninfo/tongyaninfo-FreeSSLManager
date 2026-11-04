@@ -182,6 +182,27 @@ function OperationDetail({ operation }: { operation: McpOperation }) {
           },
         ]}
       />
+      {Object.keys(summary).length > 0 && (
+        <section aria-label="审批内容摘要" style={{ marginTop: 16 }}>
+          <Typography.Title level={5}>审批内容摘要</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            以下为服务端投影的业务范围和变更摘要，供核对账号、目标、计划和任务；不展示凭据、私钥、脚本或加密业务输入。
+          </Typography.Paragraph>
+          <Typography.Paragraph
+            copyable={{ text: JSON.stringify(summary, null, 2) }}
+          >
+            <pre
+              style={{
+                whiteSpace: 'pre-wrap',
+                maxHeight: 420,
+                overflow: 'auto',
+              }}
+            >
+              {JSON.stringify(summary, null, 2)}
+            </pre>
+          </Typography.Paragraph>
+        </section>
+      )}
       {Array.isArray(summary.targets) && (
         <div style={{ marginTop: 16 }}>
           <strong>本次允许变更的部署目标</strong>

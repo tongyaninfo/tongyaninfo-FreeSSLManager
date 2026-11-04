@@ -29,9 +29,11 @@ export default {
   'ssl.dashboard.configureHint': '管理云账号与同步计划',
   'ssl.dashboard.guide': '使用指南',
   'ssl.dashboard.guideHint': '了解配置与操作流程',
-  'ssl.dashboard.expiringNotice': '30 天内到期 {count} 张，按到期时间展示最近 8 张。',
+  'ssl.dashboard.expiringNotice':
+    '30 天内到期 {count} 张，按到期时间展示最近 8 张。',
   'ssl.dashboard.quickAccess': '常用入口',
-  'ssl.dashboard.dataHint': '统计来自当前已同步的云端资源，最新状态请在管理页面核对。',
+  'ssl.dashboard.dataHint':
+    '统计来自当前已同步的云端资源，最新状态请在管理页面核对。',
   'ssl.dashboard.providerHint': '按证书所属云平台统计',
   'ssl.app.name': '通研FREE SSL管理',
   'ssl.menu.configuration': '配置管理',
@@ -132,6 +134,7 @@ export default {
   'ssl.dashboard.expiry': '到期时间',
   'ssl.page.configuration.cloudAccounts': '云平台配置',
   'ssl.page.configuration.syncSchedules': '同步计划',
+  'ssl.page.configuration.nextSyncAt': '下次同步',
   'ssl.page.domains.title': '域名管理',
   'ssl.page.domains.records': '解析记录',
   'ssl.page.certificates.title': 'SSL 证书管理',

@@ -25,15 +25,20 @@ namespace SslManager.Tests;
 public sealed class McpApiKeyTests
 {
     [Theory]
-    [InlineData("2026-07-28", false)]
-    [InlineData("2025-11-25", false)]
-    [InlineData("2026-07-28", true)]
-    [InlineData("2025-11-25", true)]
-    public async Task OfficialSdkCallsWithApiKeyWithoutOAuthCertificate(string version, bool customHeader)
+    [InlineData("2026-07-28", false, false)]
+    [InlineData("2025-11-25", false, false)]
+    [InlineData("2026-07-28", true, false)]
+    [InlineData("2025-11-25", true, false)]
+    [InlineData("2026-07-28", false, true)]
+    [InlineData("2025-11-25", false, true)]
+    [InlineData("2026-07-28", true, true)]
+    [InlineData("2025-11-25", true, true)]
+    public async Task OfficialSdkCallsWithApiKeyWithoutOAuthCertificate(string version, bool customHeader, bool privateHttp)
     {
-        await using var f = await Fixture.CreateAsync();
-        using var http = f.App.GetTestClient(); http.BaseAddress = new("https://ssl.example.test");
-        var transport = new HttpClientTransport(new() { Endpoint = new("https://ssl.example.test/mcp"),
+        var origin = privateHttp ? "http://ssl.example.test" : "https://ssl.example.test";
+        await using var f = await Fixture.CreateAsync(origin);
+        using var http = f.App.GetTestClient(); http.BaseAddress = new(origin);
+        var transport = new HttpClientTransport(new() { Endpoint = new(origin + "/mcp"),
             TransportMode = HttpTransportMode.StreamableHttp,
             AdditionalHeaders = new Dictionary<string, string> { [customHeader ? "X-API-Key" : "Authorization"] = customHeader ? f.Created.ApiKey : "Bearer " + f.Created.ApiKey } }, http);
         await using var client = await ModelContextProtocol.Client.McpClient.CreateAsync(transport, new() { ProtocolVersion = version });
@@ -41,6 +46,8 @@ public sealed class McpApiKeyTests
         Assert.False((await client.CallToolAsync("ssl_system_status_get")).IsError);
         await using var scope = f.App.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var profile = (await scope.ServiceProvider.GetRequiredService<IMcpClientService>().ProfileAsync(f.Client.Id, default)).Data!;
+        Assert.Equal(origin + "/mcp", profile.McpUrl); Assert.Equal("", profile.AuthorizationUrl); Assert.Equal("", profile.TokenUrl); Assert.Equal("", profile.OAuthMcpUrl);
         var key = await db.McpApiKeys.SingleAsync(); Assert.NotNull(key.LastUsedAtUtc);
         var logs = await db.McpInvocationLogs.Where(x => x.Method == "tools/call").ToArrayAsync();
         Assert.Contains(logs, row => row.AuthenticationType == "ApiKey" && row.ApiKeyId == key.Id);
@@ -50,6 +57,27 @@ public sealed class McpApiKeyTests
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent("{}") };
         request.Headers.Authorization = new("Bearer", f.Created.ApiKey);
         using var rejected = await http.SendAsync(request); Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+    }
+
+    [Fact]
+    public async Task HttpPrivatePrimaryAndExplicitHttpsAliasAcceptApiKeyWithoutOAuthCertificate()
+    {
+        await using var f = await Fixture.CreateAsync("http://192.168.1.20:5080", "https://ssl.example.test");
+        using var http = f.App.GetTestClient();
+        var transport = new HttpClientTransport(new() { Endpoint = new("https://ssl.example.test/mcp"), TransportMode = HttpTransportMode.StreamableHttp,
+            AdditionalHeaders = new Dictionary<string, string> { ["Authorization"] = "Bearer " + f.Created.ApiKey } }, http);
+        await using var agent = await ModelContextProtocol.Client.McpClient.CreateAsync(transport, new() { ProtocolVersion = "2026-07-28" });
+        Assert.Single(await agent.ListToolsAsync()); Assert.False((await agent.CallToolAsync("ssl_system_status_get")).IsError);
+        await using var scope = f.App.Services.CreateAsyncScope();
+        Assert.False(scope.ServiceProvider.GetRequiredService<McpRuntimeOptions>().OAuthReady);
+        var profile = (await scope.ServiceProvider.GetRequiredService<IMcpClientService>().ProfileAsync(f.Client.Id, default)).Data!;
+        Assert.Equal("", profile.OAuthMcpUrl); Assert.Equal("", profile.TokenUrl);
+        using var third = new HttpRequestMessage(HttpMethod.Post, "https://third.example.test/mcp") { Content = JsonContent("{}") };
+        third.Headers.Authorization = new("Bearer", f.Created.ApiKey);
+        using var rejected = await http.SendAsync(third); Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        using var failure = JsonDocument.Parse(await rejected.Content.ReadAsStringAsync()); Assert.Equal("INVALID_HOST", failure.RootElement.GetProperty("code").GetString());
+        using var metadata = await http.GetAsync("https://ssl.example.test/.well-known/oauth-protected-resource/mcp");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, metadata.StatusCode);
     }
 
     [Fact]
@@ -168,7 +196,7 @@ public sealed class McpApiKeyTests
         public McpClientView Client => client;
         public McpApiKeyCreated Created => created;
         public McpCallerContext Caller => new(client.ClientId, "admin", "", ["mcp.read", "mcp.write"], "127.0.0.1", AuthenticationType: "ApiKey", ApiKeyId: created.Key.Id);
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(string origin = "https://ssl.example.test", string httpsAlias = "")
         {
             // 握手通知与调用审计可能并发完成；只共享命名内存库，绝不跨请求共享连接对象。
             var connectionString = new SqliteConnectionStringBuilder { DataSource = "mcp-api-key-" + Guid.NewGuid().ToString("N"),
@@ -176,7 +204,7 @@ public sealed class McpApiKeyTests
             var connection = new SqliteConnection(connectionString); await connection.OpenAsync();
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development" }); builder.WebHost.UseTestServer();
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-            { ["AllowedHosts"] = "ssl.example.test", ["Mcp:OAuth:Issuer"] = "", ["Mcp:OAuth:CertificatePath"] = "",
+            { ["AllowedHosts"] = new Uri(origin).Host + ";ssl.example.test;third.example.test", ["Mcp:OAuth:Issuer"] = httpsAlias, ["Mcp:OAuth:CertificatePath"] = "",
                 ["Mcp:OAuth:CertificatePemPath"] = "", ["Mcp:OAuth:PrivateKeyPemPath"] = "" });
             builder.Services.AddSingleton<IIdGenerator, GuidIdGenerator>();
             builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
@@ -191,7 +219,7 @@ public sealed class McpApiKeyTests
             await db.Database.EnsureCreatedAsync();
             db.Users.Add(new UserAccount { Id = "admin", Username = "admin", NormalizedUsername = "ADMIN", Role = "admin", Enabled = true }); await db.SaveChangesAsync();
             var settings = await scope.ServiceProvider.GetRequiredService<IMcpConfigurationService>().SaveAsync(new()
-            { Enabled = true, PublicBaseUrl = "https://ssl.example.test", SystemName = "隔离证书服务", Mode = "ControlledWrite", AllowedCidrs = ["127.0.0.0/8"],
+            { Enabled = true, PublicBaseUrl = origin, SystemName = "隔离证书服务", Mode = "ControlledWrite", AllowedCidrs = ["127.0.0.0/8"],
                 AllowedTools = ["ssl_system_status_get", "ssl_deployment_targets_test"] }, default);
             Assert.True(settings.Success, settings.Message);
             var clients = scope.ServiceProvider.GetRequiredService<IMcpClientService>();

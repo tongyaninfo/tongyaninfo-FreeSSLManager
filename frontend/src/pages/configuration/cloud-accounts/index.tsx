@@ -47,6 +47,7 @@ import type {
   AliyunContact,
   CloudAccount,
 } from '@/services/ssl-manager/types';
+import styles from './index.less';
 
 const syncUnitNames: Record<string, string> = {
   minute: '分钟',
@@ -145,18 +146,25 @@ export default function CloudAccounts() {
     if (showResult(result) && result.data) setRevealed({ id, ...result.data });
   };
   const columns: ProColumns<CloudAccount>[] = [
-    { title: t('ssl.field.name', '配置名称'), dataIndex: 'name' },
+    {
+      title: t('ssl.field.name', '配置名称'),
+      dataIndex: 'name',
+      width: 170,
+      ellipsis: true,
+    },
     {
       title: t('ssl.field.provider', '云平台'),
       dataIndex: 'provider',
       valueEnum: providerNames,
+      width: 150,
     },
     {
       title: '账号标识 / Account URL',
       dataIndex: 'accessKeyIdMasked',
       search: false,
+      width: 300,
       render: (_, account) => (
-        <Space>
+        <div className={styles.accountIdentity}>
           {account.provider === 'Acme' && (
             <Tag>
               {account.acmeDirectoryUrl === acmeDirectories.staging
@@ -164,45 +172,51 @@ export default function CloudAccounts() {
                 : '生产环境'}
             </Tag>
           )}
-          <span style={{ overflowWrap: 'anywhere' }}>
-            {revealed?.id === account.id ? (
-              revealed.accessKeyId
-            ) : account.provider === 'Acme' ? (
-              account.accountUrl ? (
-                <Typography.Text copyable={{ text: account.accountUrl }}>
-                  {account.accountUrl}
-                </Typography.Text>
-              ) : (
-                account.accessKeyIdMasked || '尚未注册'
-              )
-            ) : (
-              account.accessKeyIdMasked
-            )}
-          </span>
-          <Button
-            type="text"
-            aria-label={
-              revealed?.id === account.id ? '隐藏原始密钥' : '显示原始密钥'
-            }
-            icon={
-              revealed?.id === account.id ? (
-                <EyeInvisibleOutlined />
-              ) : (
-                <EyeOutlined />
-              )
-            }
-            loading={revealingId === account.id}
-            onClick={() => toggleSecrets(account.id)}
-          />
-        </Space>
+          <div className={styles.accountIdentityValue}>
+            <Typography.Paragraph
+              className={styles.identifier}
+              ellipsis={{ rows: 1, tooltip: true }}
+              copyable={
+                account.provider === 'Acme' && account.accountUrl
+                  ? { text: account.accountUrl }
+                  : false
+              }
+            >
+              {revealed?.id === account.id
+                ? revealed.accessKeyId
+                : account.provider === 'Acme'
+                  ? account.accountUrl ||
+                    account.accessKeyIdMasked ||
+                    '尚未注册'
+                  : account.accessKeyIdMasked}
+            </Typography.Paragraph>
+            <Button
+              type="text"
+              aria-label={
+                revealed?.id === account.id ? '隐藏原始密钥' : '显示原始密钥'
+              }
+              icon={
+                revealed?.id === account.id ? (
+                  <EyeInvisibleOutlined />
+                ) : (
+                  <EyeOutlined />
+                )
+              }
+              loading={revealingId === account.id}
+              onClick={() => toggleSecrets(account.id)}
+            />
+          </div>
+        </div>
       ),
     },
     {
       title: 'ACME 账户信息',
+      key: 'acmeAccountInfo',
       search: false,
+      width: 250,
       render: (_, account) =>
         account.provider === 'Acme' ? (
-          <Space direction="vertical" size={0}>
+          <div className={styles.acmeMetadata}>
             <span>
               {account.acmeAccountMode === 'Automatic'
                 ? '系统注册账户'
@@ -213,36 +227,50 @@ export default function CloudAccounts() {
                 '待配置'}
             </span>
             {account.publicKeyThumbprint && (
-              <Typography.Text copyable={{ text: account.publicKeyThumbprint }}>
+              <Typography.Paragraph
+                className={styles.fingerprint}
+                ellipsis={{ rows: 1, tooltip: true }}
+                copyable={{ text: account.publicKeyThumbprint }}
+              >
                 公钥指纹：{account.publicKeyThumbprint}
-              </Typography.Text>
+              </Typography.Paragraph>
             )}
             {account.registeredAtUtc && (
               <span>注册时间：{dateText(account.registeredAtUtc)}</span>
             )}
-          </Space>
+          </div>
         ) : (
           '—'
         ),
     },
     {
       title: '认证凭据',
+      key: 'credentials',
       search: false,
+      width: 135,
       render: (_, account) => (
-        <span style={{ overflowWrap: 'anywhere' }}>
+        <div
+          className={
+            revealed?.id === account.id
+              ? styles.revealedCredential
+              : styles.maskedCredential
+          }
+        >
           {revealed?.id === account.id
             ? revealed.accessKeySecret
             : account.hasAccessKeySecret
               ? '••••••••••••'
               : '未配置'}
-        </span>
+        </div>
       ),
     },
     {
       title: t('ssl.field.usage', '用途'),
+      key: 'usage',
       search: false,
+      width: 110,
       render: (_, account) => (
-        <Space>
+        <Space size={[0, 4]} wrap>
           {account.provider !== 'Cloudflare' && account.useForCertificates && (
             <Tag>证书</Tag>
           )}
@@ -253,6 +281,7 @@ export default function CloudAccounts() {
     {
       title: t('ssl.field.status', '状态'),
       dataIndex: 'enabled',
+      width: 85,
       valueEnum: {
         true: { text: '启用', status: 'Success' },
         false: { text: '停用', status: 'Default' },
@@ -262,15 +291,17 @@ export default function CloudAccounts() {
       title: t('ssl.field.lastSyncAt', '最近同步'),
       dataIndex: 'lastAutoSyncAtUtc',
       search: false,
+      width: 165,
       render: (_, account) => {
         // 最近同步由后台自动同步 Worker 写入 LastAutoSyncAtUtc；连接测试时间属于另一项诊断结果，不能混用。
         return dateText(account.lastAutoSyncAtUtc);
       },
     },
     {
-      title: t('ssl.page.configuration.syncSchedules', '自动同步'),
+      title: t('ssl.page.configuration.syncSchedules', '同步计划'),
       dataIndex: 'autoSyncEnabled',
       search: false,
+      width: 165,
       render: (_, account) =>
         account.autoSyncEnabled ? (
           <Space direction="vertical" size={0}>
@@ -298,9 +329,10 @@ export default function CloudAccounts() {
         ),
     },
     {
-      title: t('ssl.page.configuration.syncSchedules', '下次同步'),
+      title: t('ssl.page.configuration.nextSyncAt', '下次同步'),
       dataIndex: 'nextSyncAtUtc',
       search: false,
+      width: 165,
       render: (_, account) =>
         dateText(
           account.autoSyncNextRunAtUtc ||
@@ -311,58 +343,59 @@ export default function CloudAccounts() {
     {
       title: t('ssl.column.actions', '操作'),
       valueType: 'option',
-      render: (_, account) => [
-        <Button
-          type="link"
-          key="edit"
-          onClick={() => {
-            clearSecrets();
-            setEditing(account);
-            setOpen(true);
-          }}
-        >
-          编辑
-        </Button>,
-        <Button
-          type="link"
-          key="test"
-          loading={testingId === account.id}
-          onClick={async () => {
-            setTestingId(account.id);
-            const result = await accountApi.test(account.id);
-            setTestingId('');
-            if (showResult(result)) {
-              setDiagnostic(result.data ?? {});
-              actionRef.current?.reload();
-            }
-          }}
-        >
-          测试连接与权限
-        </Button>,
-        ...(account.provider === 'Acme' &&
-        account.acmeAccountMode === 'Automatic' &&
-        !['Registered', 'Configured', 'Provided'].includes(
-          account.acmeAccountStatus || '',
-        )
-          ? [
-              <Button
-                key="register"
-                type="link"
-                disabled={account.acmeAccountStatus === 'Submitting'}
-                onClick={() => {
-                  setRegistrationAccount(account);
-                  setRegistrationResult(undefined);
-                  setRegistrationError('');
-                  setAgreeTerms(false);
-                }}
-              >
-                {account.acmeAccountStatus === 'Unknown'
-                  ? '核对ACME注册结果'
-                  : '注册ACME账户'}
-              </Button>,
-            ]
-          : []),
-      ],
+      width: 220,
+      render: (_, account) => (
+        <Space size={[0, 4]} wrap>
+          <Button
+            type="link"
+            key="edit"
+            onClick={() => {
+              clearSecrets();
+              setEditing(account);
+              setOpen(true);
+            }}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            key="test"
+            loading={testingId === account.id}
+            onClick={async () => {
+              setTestingId(account.id);
+              const result = await accountApi.test(account.id);
+              setTestingId('');
+              if (showResult(result)) {
+                setDiagnostic(result.data ?? {});
+                actionRef.current?.reload();
+              }
+            }}
+          >
+            测试连接与权限
+          </Button>
+          {account.provider === 'Acme' &&
+          account.acmeAccountMode === 'Automatic' &&
+          !['Registered', 'Configured', 'Provided'].includes(
+            account.acmeAccountStatus || '',
+          ) ? (
+            <Button
+              key="register"
+              type="link"
+              disabled={account.acmeAccountStatus === 'Submitting'}
+              onClick={() => {
+                setRegistrationAccount(account);
+                setRegistrationResult(undefined);
+                setRegistrationError('');
+                setAgreeTerms(false);
+              }}
+            >
+              {account.acmeAccountStatus === 'Unknown'
+                ? '核对ACME注册结果'
+                : '注册ACME账户'}
+            </Button>
+          ) : null}
+        </Space>
+      ),
     },
   ];
   return (
@@ -386,12 +419,15 @@ export default function CloudAccounts() {
         <Alert title={loadError} type="error" style={{ marginBottom: 16 }} />
       )}
       <ProTable<CloudAccount>
+        className={styles.accountsTable}
         rowKey="id"
         actionRef={actionRef}
         columns={columns}
         {...tablePreferences}
         search={{ labelWidth: 90 }}
-        scroll={{ x: 1000 }}
+        // 固定列宽与表内滚动共同防止长 URL、指纹将其他列挤成逐字换行。
+        tableLayout="fixed"
+        scroll={{ x: 1915 }}
         request={async ({ current, pageSize, ...params }) => {
           clearSecrets();
           const result = await accountApi.list({

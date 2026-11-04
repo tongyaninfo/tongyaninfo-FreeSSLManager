@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SslManager.Api.Common;
+using SslManager.Api.Common.Mcp;
 using SslManager.Api.Data;
 using SslManager.Api.Models;
 using SslManager.Api.Models.Mcp;
@@ -17,6 +18,198 @@ namespace SslManager.Tests;
 /// <summary>真实 SQLite 事务加协议假目标，验证崩溃窗口、审批身份、幂等与撤销；不访问云或真实设备。</summary>
 public sealed class McpOperationTests
 {
+    [Fact]
+    public async Task DnsCreateEncryptsValueRequiresApprovalAndNeverResendsConsumedOperation()
+    {
+        await using var f = await Fixture.CreateAsync();
+        const string secret = "synthetic-private-dns-validation-value";
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", name = "_acme-challenge.vpn", type = "TXT", value = secret, ttl = 600 });
+        var prepared = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-create", null, default);
+        Assert.True(prepared.Success, prepared.Message); Assert.Equal("Prepared", prepared.Data!.Status); Assert.Equal(0, f.Cloud.DnsWrites);
+        var persisted = await f.Db.McpOperations.AsNoTracking().SingleAsync();
+        Assert.DoesNotContain(secret, persisted.ArgumentsJson); Assert.DoesNotContain(secret, persisted.ResourceJson);
+        Assert.Equal("MCP_APPROVAL_REQUIRED", (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-create", prepared.Data.Id, default)).Code);
+        Assert.True((await f.Operations.ApproveAsync(prepared.Data.Id, "approver", true, prepared.Data.Version, default)).Success);
+        var executed = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-create", prepared.Data.Id, default);
+        Assert.True(executed.Success, executed.Message); Assert.Equal("Succeeded", executed.Data!.Status); Assert.Equal(1, f.Cloud.DnsWrites);
+        Assert.DoesNotContain(secret, JsonSerializer.Serialize(executed));
+        Assert.True((await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-create", prepared.Data.Id, default)).Success);
+        Assert.Equal(1, f.Cloud.DnsWrites);
+        var changed = JsonSerializer.SerializeToElement(new { zoneId = "zone", name = "_acme-challenge.vpn", type = "TXT", value = "other-value", ttl = 600 });
+        Assert.Equal("IDEMPOTENCY_CONFLICT", (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", changed, "dns-create", prepared.Data.Id, default)).Code);
+    }
+
+    [Theory]
+    [InlineData("ssl_dns_records_update")]
+    [InlineData("ssl_dns_records_delete")]
+    [InlineData("ssl_dns_records_status")]
+    public async Task DnsMutationsBindExactRecordAndRejectChangedApprovedResource(string tool)
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Cloud.Records = [new("record", "example.test", "vpn", "TXT", "old-secret", 600, "Enabled", "default", "")];
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", recordId = "record", name = "vpn", type = "TXT", value = "new-secret", ttl = 600, enabled = false });
+        var prepared = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "dns-change", null, default);
+        Assert.True(prepared.Success, prepared.Message);
+        Assert.True((await f.Operations.ApproveAsync(prepared.Data!.Id, "approver", true, prepared.Data.Version, default)).Success);
+        f.Cloud.Records[0] = f.Cloud.Records[0] with { Value = "changed-elsewhere" };
+        var changed = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "dns-change", prepared.Data.Id, default);
+        Assert.Equal("MCP_RESOURCE_CHANGED", changed.Code); Assert.Equal(0, f.Cloud.DnsWrites);
+        f.Cloud.Records[0] = f.Cloud.Records[0] with { Value = "old-secret" };
+        var executed = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "dns-change", prepared.Data.Id, default);
+        Assert.True(executed.Success, executed.Message); Assert.Equal(1, f.Cloud.DnsWrites);
+    }
+
+    [Fact]
+    public async Task DnsRenameRequiresBothOriginalAndDesiredDomainAuthorization()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Cloud.Records = [new("record", "example.test", "private", "TXT", "old-secret", 600, "Enabled", "default", "")];
+        f.Authorization.AllowedDomains = ["vpn.example.test"];
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", recordId = "record", name = "vpn", type = "TXT", value = "new-secret" });
+        var denied = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_update", input, "rename", null, default);
+        Assert.Equal("FORBIDDEN", denied.Code); Assert.Empty(await f.Db.McpOperations.ToListAsync());
+        f.Authorization.AllowedDomains = ["vpn.example.test", "private.example.test"];
+        Assert.True((await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_update", input, "rename", null, default)).Success);
+    }
+
+    [Fact]
+    public async Task AbsoluteDnsInputIsWrittenAsProviderRelativeNameWithoutChangingAuthorizedHost()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Authorization.AllowedDomains = ["vpn.example.test"];
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", name = "vpn.example.test.", type = "TXT", value = "synthetic-value" });
+        var prepared = (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-absolute", null, default)).Data!;
+        Assert.True((await f.Operations.ApproveAsync(prepared.Id, "approver", true, prepared.Version, default)).Success);
+        var result = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-absolute", prepared.Id, default);
+        Assert.True(result.Success, result.Message); Assert.Equal("vpn", Assert.Single(f.Cloud.Records).Name);
+        Assert.Contains("vpn.example.test", result.Data!.SummaryJson);
+    }
+
+    [Fact]
+    public async Task DnsUnknownOutcomeIsPersistedAndRetryNeverCreatesAgain()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", name = "vpn", type = "TXT", value = "synthetic-value" });
+        var prepared = (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-unknown", null, default)).Data!;
+        Assert.True((await f.Operations.ApproveAsync(prepared.Id, "approver", true, prepared.Version, default)).Success);
+        f.Cloud.DnsFailure = ApiResult<DnsRecord>.Fail("OutcomeUnknown", "synthetic-remote-secret");
+        var result = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-unknown", prepared.Id, default);
+        Assert.False(result.Success); Assert.Equal("Unknown", result.Data!.Status); Assert.Equal(1, f.Cloud.DnsWrites);
+        Assert.DoesNotContain("synthetic-remote-secret", JsonSerializer.Serialize(result));
+        Assert.False((await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-unknown", prepared.Id, default)).Success);
+        Assert.Equal(1, f.Cloud.DnsWrites);
+    }
+
+    [Fact]
+    public async Task RevocationInsideProviderReadIsCheckedAtActualDnsWriteBoundary()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var input = JsonSerializer.SerializeToElement(new { zoneId = "zone", name = "vpn", type = "TXT", value = "synthetic-value" });
+        var prepared = (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-revoked", null, default)).Data!;
+        Assert.True((await f.Operations.ApproveAsync(prepared.Id, "approver", true, prepared.Version, default)).Success);
+        f.Cloud.BeforeMutation = () => f.Authorization.Revoked = true;
+        var result = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_dns_records_create", input, "dns-revoked", prepared.Id, default);
+        Assert.False(result.Success); Assert.Equal("Blocked", result.Data!.Status); Assert.Equal(0, f.Cloud.DnsWrites);
+    }
+
+    [Theory]
+    [InlineData("ssl_certificates_revoke", "Issued")]
+    [InlineData("ssl_certificates_cancel", "PendingValidation")]
+    [InlineData("ssl_certificates_delete", "Revoked")]
+    public async Task CertificateMaintenanceReusesBusinessServiceAndBindsOneApprovedSubmission(string tool, string status)
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Db.Certificates.Add(new() { Id = "maintenance", AccountId = f.AccountId, Provider = "TencentCloud", Domain = "vpn.example.test", CertificateId = "cloud-maintenance", Status = status });
+        await f.Db.SaveChangesAsync();
+        var input = JsonSerializer.SerializeToElement(new { certificateId = "maintenance" });
+        var prepared = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "cert-maintenance", null, default);
+        Assert.True(prepared.Success, prepared.Message); Assert.Equal(0, f.Cloud.MaintenanceWrites);
+        Assert.True((await f.Operations.ApproveAsync(prepared.Data!.Id, "approver", true, prepared.Data.Version, default)).Success);
+        var result = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "cert-maintenance", prepared.Data.Id, default);
+        Assert.True(result.Success, result.Message); Assert.Equal(1, f.Cloud.MaintenanceWrites);
+        var repeated = await f.Operations.InvokeBusinessAsync(f.Caller, tool, input, "cert-maintenance", prepared.Data.Id, default);
+        Assert.True(repeated.Success, repeated.Message); Assert.Equal(1, f.Cloud.MaintenanceWrites);
+        Assert.DoesNotContain("synthetic-remote-secret", JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
+    public async Task AcceptedCertificateDeleteJobStopsWhenItsOriginalKeyIsRevoked()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Db.Certificates.Add(new() { Id = "maintenance", AccountId = f.AccountId, Provider = "TencentCloud", Domain = "vpn.example.test", CertificateId = "cloud-maintenance", Status = "Revoked" });
+        await f.Db.SaveChangesAsync();
+        f.Cloud.DeleteResult = ApiResult<CloudOperation>.Ok(new("request", "Deleting"));
+        var input = JsonSerializer.SerializeToElement(new { certificateId = "maintenance" });
+        var prepared = (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_certificates_delete", input, "delete-job", null, default)).Data!;
+        Assert.True((await f.Operations.ApproveAsync(prepared.Id, "approver", true, prepared.Version, default)).Success);
+        var submitted = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_certificates_delete", input, "delete-job", prepared.Id, default);
+        Assert.True(submitted.Success, submitted.Message); Assert.Equal("Waiting", submitted.Data!.Status);
+        Assert.NotEmpty(submitted.Data.CertificateJobId);
+        f.Authorization.Revoked = true;
+        await f.Certificates.ProcessJobAsync(submitted.Data.CertificateJobId, default);
+        Assert.Equal("Blocked", (await f.Db.McpOperations.AsNoTracking().SingleAsync()).Status);
+        Assert.True(await f.Db.Certificates.AnyAsync(x => x.Id == "maintenance")); Assert.Equal(1, f.Cloud.MaintenanceWrites);
+    }
+
+    [Fact]
+    public async Task CertificateUnknownResultDoesNotExposeRemoteErrorOrResubmit()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Db.Certificates.Add(new() { Id = "maintenance", AccountId = f.AccountId, Provider = "TencentCloud", Domain = "vpn.example.test", CertificateId = "cloud-maintenance", Status = "Issued" });
+        await f.Db.SaveChangesAsync();
+        var input = JsonSerializer.SerializeToElement(new { certificateId = "maintenance", reason = "superseded" });
+        var prepared = (await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_certificates_revoke", input, "revoke-unknown", null, default)).Data!;
+        Assert.True((await f.Operations.ApproveAsync(prepared.Id, "approver", true, prepared.Version, default)).Success);
+        f.Cloud.RevokeResult = ApiResult<CloudOperation>.Fail("OutcomeUnknown", "synthetic-remote-secret");
+        var result = await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_certificates_revoke", input, "revoke-unknown", prepared.Id, default);
+        Assert.False(result.Success); Assert.Equal("Unknown", result.Data!.Status); Assert.DoesNotContain("synthetic-remote-secret", JsonSerializer.Serialize(result));
+        Assert.False((await f.Operations.InvokeBusinessAsync(f.Caller, "ssl_certificates_revoke", input, "revoke-unknown", prepared.Id, default)).Success);
+        Assert.Equal(1, f.Cloud.MaintenanceWrites);
+    }
+
+    [Fact]
+    public async Task ScheduleMaintenanceJobKeepsCurrentPolicyKeyInsteadOfOriginalApplicationKey()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var source = new McpOperation { Id = "schedule-policy", Kind = "Business", ToolName = "ssl_schedules_run", ClientId = "client",
+            EffectiveUserId = "actor", AuthenticationType = "ApiKey", ApiKeyId = "schedule-key", ScopesJson = "[\"mcp.write\"]",
+            SourceIp = "192.0.2.10", Status = "Succeeded", ConsumedAtUtc = DateTime.UtcNow, IdempotencyKey = "policy",
+            ResourceJson = JsonSerializer.Serialize(new { resources = new[] { new McpResourceScope(f.AccountId, "vpn.example.test") } }, new JsonSerializerOptions(JsonSerializerDefaults.Web)) };
+        f.Db.McpOperations.Add(source);
+        f.Db.Certificates.Add(new() { Id = "old-certificate", AccountId = f.AccountId, Provider = "TencentCloud", Domain = "vpn.example.test", CertificateId = "cloud-old", Status = "Revoked" });
+        await f.Db.SaveChangesAsync();
+        f.Cloud.DeleteResult = ApiResult<CloudOperation>.Ok(new("request", "Deleting"));
+        using (McpCloudMutationGuard.Enter(_ => Task.CompletedTask, source.Id))
+            Assert.True((await f.Certificates.DeleteAsync("old-certificate", default)).Success);
+        var child = await f.Db.McpOperations.AsNoTracking().SingleAsync(x => x.Kind == "ScheduleMaintenance");
+        Assert.Equal("schedule-key", child.ApiKeyId); Assert.Equal("old-certificate", child.CertificateId); Assert.NotEmpty(child.CertificateJobId);
+        Assert.Contains("schedule-policy", child.ResourceJson);
+        Assert.Equal("", (await f.Db.McpOperations.AsNoTracking().SingleAsync(x => x.Id == source.Id)).CertificateJobId);
+        f.Authorization.Revoked = true;
+        await f.Certificates.ProcessJobAsync(child.CertificateJobId, default);
+        Assert.Equal("Blocked", (await f.Db.McpOperations.AsNoTracking().SingleAsync(x => x.Id == child.Id)).Status);
+        Assert.Equal(1, f.Cloud.MaintenanceWrites);
+    }
+
+    [Fact]
+    public async Task ValidationQueryReturnsExplicitChallengeValuesOnlyWithinCertificateAuthorization()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Db.Certificates.Add(new() { Id = "validation", AccountId = f.AccountId, Provider = "TencentCloud", Domain = "vpn.example.test", CertificateId = "cloud-validation", Status = "Revoking" });
+        await f.Db.SaveChangesAsync();
+        f.Cloud.DetailOverride = ApiResult<CloudCertificateDetail>.Ok(new(new(new("cloud-validation"), "vpn.example.test", "", "Revoking", "", true, "83", null, null, "DNS_AUTO", "request"),
+            [new("vpn.example.test", "_application.example.test", "TXT", "synthetic-application-value")],
+            RevocationChallenges: [new("vpn.example.test", "_revocation.example.test", "TXT", "synthetic-revocation-value"), new("outside.example.test", "_outside.example.test", "TXT", "must-not-be-exposed")]));
+        var result = await f.Tools.CallAsync(f.Caller, "ssl_certificates_validations_get", JsonSerializer.SerializeToElement(new { certificateId = "validation" }), default);
+        Assert.True(result.Success, result.Message);
+        var body = JsonSerializer.Serialize(result);
+        Assert.Contains("synthetic-application-value", body); Assert.Contains("synthetic-revocation-value", body); Assert.DoesNotContain("must-not-be-exposed", body);
+        Assert.Empty(await f.Db.McpOperations.ToArrayAsync()); Assert.Equal(0, f.Cloud.MaintenanceWrites);
+        f.Cloud.BeforeReadCertificate = () => f.Authorization.Revoked = true;
+        var denied = await f.Tools.CallAsync(f.Caller, "ssl_certificates_validations_get", JsonSerializer.SerializeToElement(new { certificateId = "validation" }), default);
+        Assert.False(denied.Success); Assert.DoesNotContain("synthetic-revocation-value", JsonSerializer.Serialize(denied));
+    }
+
     [Fact]
     public async Task PreparationRequiresWebApprovalAndNeverCallsCloud()
     {
@@ -370,6 +563,8 @@ public sealed class McpOperationTests
         public DeploymentService Deployments { get; } = deployments;
         public McpOperationService Operations { get; } = operations;
         public FakeExecutor Executor { get; } = executor;
+        public string AccountId => accountId;
+        public McpToolDispatcher Tools { get; private set; } = null!;
         public McpCallerContext Caller { get; } = new("client", "actor", "authorization", ["ssl.write", "ssl.read"], "192.0.2.10", "admin");
         public CertificateApplyRequest Request => new(accountId, "vpn.example.test", ValidationMode: "NativeAutoDns", AutoCleanup: false);
         public async Task<McpOperationView> PrepareAsync()
@@ -417,8 +612,9 @@ public sealed class McpOperationTests
                 Username = "test", AuthenticationMode = "Password", ProtectedCredentials = protectedCredentials, ConfigurationJson = targetRow.ConfigurationJson, ConfigRevision = 1 });
             await db.SaveChangesAsync();
             var deployments = new DeploymentService(db, targets, executors, new FakeMaterials(), protection, ids, mcpGate: gate);
-            var operations = new McpOperationService(db, authorization, certificates, deployments, targets, ids);
-            return new(connection, db, authorization, cloud, certificates, deployments, operations, executor, accountId);
+            var operations = new McpOperationService(db, authorization, certificates, deployments, targets, ids, domains, protection);
+            return new(connection, db, authorization, cloud, certificates, deployments, operations, executor, accountId)
+                { Tools = new McpToolDispatcher(db, authorization, domains, executors, operations, certificates) };
         }
         public async Task SeedIssuedAsync()
         { Db.Certificates.Add(new() { Id = "issued", AccountId = accountId, Domain = "vpn.example.test", Status = "Issued", NotAfterUtc = DateTime.UtcNow.AddMonths(3) }); await Db.SaveChangesAsync(); }
@@ -447,11 +643,13 @@ public sealed class McpOperationTests
         public bool Revoked { get; set; }
         public bool RequestTokenExpired { get; set; }
         public int Revision { get; set; } = 1;
+        public string[]? AllowedDomains { get; set; }
         public List<bool> WorkerChecks { get; } = [];
         public Task<ApiResult<McpEffectivePermission>> AuthorizeAsync(McpCallerContext caller, string toolName, McpResourceScope? resource, bool worker, CancellationToken ct)
         {
             WorkerChecks.Add(worker);
-            return Task.FromResult(Revoked || !worker && RequestTokenExpired
+            return Task.FromResult(resource?.Domain is { Length: > 0 } domain && AllowedDomains is not null && !AllowedDomains.Contains(domain)
+                ? ApiResult<McpEffectivePermission>.Fail("FORBIDDEN", "域名未授权。") : Revoked || !worker && RequestTokenExpired
                 ? ApiResult<McpEffectivePermission>.Fail("MCP_REVOKED", "模拟授权撤销或请求令牌到期。")
                 : ApiResult<McpEffectivePermission>.Ok(new(1, 1, Revision, [], Preauthorized)));
         }
@@ -501,21 +699,40 @@ public sealed class McpOperationTests
         public int ApplyCalls { get; private set; }
         public Func<Task>? BeforeApply { get; set; }
         public ApiResult<CloudCertificateDetail>? ApplyFailure { get; set; }
+        public List<DnsRecord> Records { get; set; } = [];
+        public int DnsWrites { get; private set; }
+        public int MaintenanceWrites { get; private set; }
+        public Action? BeforeMutation { get; set; }
+        public ApiResult<DnsRecord>? DnsFailure { get; set; }
+        public ApiResult<CloudOperation>? RevokeResult { get; set; }
+        public ApiResult<CloudOperation>? DeleteResult { get; set; }
+        public ApiResult<CloudCertificateDetail>? DetailOverride { get; set; }
+        public Action? BeforeReadCertificate { get; set; }
         public async Task<ApiResult<CloudCertificateDetail>> ApplyAsync(CloudAccountCredentials account, CloudCertificateApplyRequest request, CancellationToken ct = default)
         { ApplyCalls++; if (BeforeApply is not null) await BeforeApply(); return ApplyFailure ?? Detail(new("cloud-cert")); }
         private static ApiResult<CloudCertificateDetail> Detail(CloudCertificateReference reference) => ApiResult<CloudCertificateDetail>.Ok(new(new(reference,
             "vpn.example.test", "", "PendingValidation", "Pending", true, "83", null, null, "DNS_AUTO", "request"), []));
-        public Task<ApiResult<CloudCertificateDetail>> GetAsync(CloudAccountCredentials account, CloudCertificateReference reference, CancellationToken ct = default) => Task.FromResult(Detail(reference));
+        public Task<ApiResult<CloudCertificateDetail>> GetAsync(CloudAccountCredentials account, CloudCertificateReference reference, CancellationToken ct = default)
+        { BeforeReadCertificate?.Invoke(); return Task.FromResult(DetailOverride ?? Detail(reference)); }
         public Task<ApiResult<CloudConnectionTest>> TestAsync(CloudAccountCredentials account, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ApiResult<IReadOnlyList<CloudCertificate>>> ListAsync(CloudAccountCredentials account, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ApiResult<CloudOperation>> RevokeAsync(CloudAccountCredentials account, CloudCertificateReference reference, string reason, CancellationToken ct = default) => throw new NotSupportedException();
+        public async Task<ApiResult<CloudOperation>> RevokeAsync(CloudAccountCredentials account, CloudCertificateReference reference, string reason, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); MaintenanceWrites++; return RevokeResult ?? ApiResult<CloudOperation>.Ok(new("request", "Revoked")); }
+        public async Task<ApiResult<CloudOperation>> CancelAsync(CloudAccountCredentials account, CloudCertificateReference reference, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); MaintenanceWrites++; return ApiResult<CloudOperation>.Ok(new("request", "Cancelled")); }
+        public async Task<ApiResult<CloudOperation>> DeleteAsync(CloudAccountCredentials account, CloudCertificateReference reference, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); MaintenanceWrites++; return DeleteResult ?? ApiResult<CloudOperation>.Ok(new("request", "Deleted")); }
         public Task<ApiResult<CertificateDownload>> DownloadAsync(CloudAccountCredentials account, CloudCertificateReference reference, string format, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ApiResult<CloudConnectionTest>> TestDnsAsync(CloudAccountCredentials account, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ApiResult<IReadOnlyList<DnsZone>>> ListZonesAsync(CloudAccountCredentials account, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ApiResult<IReadOnlyList<DnsRecord>>> ListRecordsAsync(CloudAccountCredentials account, string zone, CancellationToken ct = default) => Task.FromResult(ApiResult<IReadOnlyList<DnsRecord>>.Ok([]));
-        public Task<ApiResult<DnsRecord>> CreateRecordAsync(CloudAccountCredentials account, string zone, DnsRecordRequest request, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ApiResult<DnsRecord>> UpdateRecordAsync(CloudAccountCredentials account, string zone, string id, DnsRecordRequest request, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ApiResult<CloudOperation>> SetRecordStatusAsync(CloudAccountCredentials account, string zone, string id, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ApiResult<CloudOperation>> DeleteRecordAsync(CloudAccountCredentials account, string zone, string id, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ApiResult<IReadOnlyList<DnsRecord>>> ListRecordsAsync(CloudAccountCredentials account, string zone, CancellationToken ct = default) => Task.FromResult(ApiResult<IReadOnlyList<DnsRecord>>.Ok(Records.ToArray()));
+        public async Task<ApiResult<DnsRecord>> CreateRecordAsync(CloudAccountCredentials account, string zone, DnsRecordRequest request, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); DnsWrites++; var record = new DnsRecord("created-record", zone, request.Name, request.Type, request.Value, request.Ttl, "Enabled", request.Line, "request", request.Mx); if (DnsFailure is null) Records.Add(record); return DnsFailure ?? ApiResult<DnsRecord>.Ok(record); }
+        public async Task<ApiResult<DnsRecord>> UpdateRecordAsync(CloudAccountCredentials account, string zone, string id, DnsRecordRequest request, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); DnsWrites++; return DnsFailure ?? ApiResult<DnsRecord>.Ok(new(id, zone, request.Name, request.Type, request.Value, request.Ttl, "Enabled", request.Line, "request", request.Mx)); }
+        public async Task<ApiResult<CloudOperation>> SetRecordStatusAsync(CloudAccountCredentials account, string zone, string id, bool enabled, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); DnsWrites++; return ApiResult<CloudOperation>.Ok(new("request", "Updated")); }
+        public async Task<ApiResult<CloudOperation>> DeleteRecordAsync(CloudAccountCredentials account, string zone, string id, CancellationToken ct = default)
+        { BeforeMutation?.Invoke(); await McpCloudMutationGuard.CheckBeforeMutationAsync(ct); DnsWrites++; Records.RemoveAll(x => x.Id == id); return ApiResult<CloudOperation>.Ok(new("request", "Deleted")); }
     }
 }

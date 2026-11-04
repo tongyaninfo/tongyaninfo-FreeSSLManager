@@ -28,6 +28,7 @@ public sealed class TencentCloudApiClient(IHttpClientFactory clients)
             request.Headers.TryAddWithoutValidation("X-TC-Timestamp", now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
             request.Headers.TryAddWithoutValidation("X-TC-Language", "zh-CN");
             request.Headers.TryAddWithoutValidation("Authorization", Sign(account.AccessKeyId, account.AccessKeySecret, service, host, body, now));
+            if (mutation) await Mcp.McpCloudMutationGuard.CheckBeforeMutationAsync(ct);
             using var response = await clients.CreateClient("TencentCloudApi").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             var bytes = await CertificateDownloadHelper.ReadLimitedAsync(response.Content, 8 * 1024 * 1024, ct);
             if (!bytes.Success) return mutation ? CloudJson.TransportFailure<JsonElement>(true, "腾讯云", bytes.Code) : CloudJson.Fail<JsonElement, byte[]>(bytes);

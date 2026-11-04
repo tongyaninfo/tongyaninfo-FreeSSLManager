@@ -22,11 +22,12 @@ public static class McpIntegration
         // 业务调用使用专用脱敏账本，协议/认证框架不在普通日志输出请求或令牌响应。
         services.AddLogging(logging => logging.AddFilter("OpenIddict", LogLevel.Warning).AddFilter("ModelContextProtocol", LogLevel.Warning));
         var issuer = configuration["Mcp:OAuth:Issuer"]?.TrimEnd('/') ?? "";
+        if (McpNetwork.ValidHttpsOrigin(issuer)) issuer = McpNetwork.NormalizeOrigin(issuer);
         var certificatePath = configuration["Mcp:OAuth:CertificatePath"];
         var certificatePemPath = configuration["Mcp:OAuth:CertificatePemPath"];
         var privateKeyPemPath = configuration["Mcp:OAuth:PrivateKeyPemPath"];
         X509Certificate2? certificate = null;
-        if (!desktop && McpNetwork.ValidBaseUrl(issuer) && (!string.IsNullOrWhiteSpace(certificatePath)
+        if (!desktop && McpNetwork.ValidHttpsOrigin(issuer) && (!string.IsNullOrWhiteSpace(certificatePath)
             || !string.IsNullOrWhiteSpace(certificatePemPath) && !string.IsNullOrWhiteSpace(privateKeyPemPath)))
         {
             try
@@ -43,7 +44,11 @@ public static class McpIntegration
             { certificate?.Dispose(); certificate = null; }
         }
         var runtime = new McpRuntimeOptions(!desktop, certificate is not null,
-            desktop ? "桌面实例不支持外部 MCP。" : "OAuth 尚未就绪；请通过受控配置引用有效 RSA 证书及 HTTPS issuer，然后重启后端。未自动生成密钥。", issuer);
+            desktop ? "桌面实例不支持外部 MCP。" : "OAuth 尚未就绪；请通过受控配置引用有效 RSA 证书及 HTTPS issuer，然后重启后端。未自动生成密钥。", issuer)
+        {
+            TrustedProxyRanges = (configuration.GetSection("Mcp:TrustedProxyAddresses").Get<string[]>() ?? [])
+                .Concat(configuration.GetSection("Mcp:TrustedProxyNetworks").Get<string[]>() ?? []).ToArray()
+        };
         services.AddSingleton(runtime);
         services.AddScoped<IMcpConfigurationService, McpConfigurationService>();
         services.AddScoped<IMcpClientService, McpClientService>();
@@ -115,11 +120,12 @@ public static class McpIntegration
     public static IEndpointRouteBuilder MapSslManagerMcp(this IEndpointRouteBuilder app)
     {
         app.MapMcp("/mcp").RequireAuthorization(Policy);
-        app.MapGet("/.well-known/oauth-protected-resource/mcp", async (AppDbContext db, CancellationToken ct) =>
+        app.MapGet("/.well-known/oauth-protected-resource/mcp", async (AppDbContext db, McpRuntimeOptions runtime, CancellationToken ct) =>
         {
             var settings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(db.McpSettings, ct);
-            if (settings is null || string.IsNullOrWhiteSpace(settings.PublicBaseUrl)) return Results.NotFound();
-            return Results.Json(new { resource = settings.PublicBaseUrl + "/mcp", authorization_servers = new[] { settings.PublicBaseUrl + "/" },
+            var address = settings is null ? "" : runtime.OAuthBaseUrl(settings.PublicBaseUrl);
+            if (address.Length == 0) return Results.NotFound();
+            return Results.Json(new { resource = address + "/mcp", authorization_servers = new[] { address + "/" },
                 scopes_supported = new[] { "mcp.read", "mcp.write" }, bearer_methods_supported = new[] { "header" } });
         }).AllowAnonymous();
         return app;

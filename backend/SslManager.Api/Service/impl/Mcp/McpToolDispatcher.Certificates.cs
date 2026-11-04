@@ -97,6 +97,27 @@ public sealed partial class McpToolDispatcher
         { record.Id, record.Name, record.Type, record.Value, record.Ttl, record.Status, record.Line, record.Mx }), total = rows.Length, page, pageSize = size });
     }
 
+    private async Task<ApiResult<object>> CertificateValidationsAsync(McpCallerContext caller, string id, CancellationToken ct)
+    {
+        if (certificateService is null) return Fail("MCP_SERVICE_UNAVAILABLE", "证书验证查询服务不可用。");
+        var certificate = await db.Certificates.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (certificate is null) return Missing();
+        var scopes = certificate.Domain.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(domain => new McpResourceScope(certificate.AccountId, McpQueryFilters.NormalizeDomain(domain))).ToArray();
+        if (scopes.Length == 0) return Missing();
+        foreach (var scope in scopes)
+            if (!(await authorization.AuthorizeAsync(caller, "ssl_certificates_validations_get", scope, false, ct)).Success) return Missing();
+        var result = await certificateService.ReadValidationsForMcpAsync(id, ct);
+        if (!result.Success || result.Data is null) return Fail("CERTIFICATE_VALIDATION_QUERY_FAILED", "验证资料查询未完成，请在 Web 核对原证书。");
+        foreach (var scope in scopes)
+            if (!(await authorization.AuthorizeAsync(caller, "ssl_certificates_validations_get", scope, false, ct)).Success) return Missing();
+        var allowedDomains = scopes.Select(scope => scope.Domain.TrimStart('*', '.')).ToHashSet(StringComparer.Ordinal);
+        var safe = result.Data.Where(challenge => allowedDomains.Contains(McpQueryFilters.NormalizeDomain(challenge.Domain).TrimStart('*', '.'))
+            && challenge.Name.Length <= 253 && challenge.Value.Length <= 4096 && !challenge.Name.Any(char.IsControl)
+            && challenge.Type is "TXT" or "CNAME" or "FILE" or "File" or "HTTP").ToArray();
+        return ApiResult<object>.Ok(new { certificateId = id, items = safe });
+    }
+
     private static string AbsoluteRecordName(string name, string zone)
     {
         var explicitlyAbsolute = name.EndsWith(".", StringComparison.Ordinal);

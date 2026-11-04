@@ -30,6 +30,7 @@ public sealed class CloudflareApiClient(IHttpClientFactory clients)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessKeySecret);
             if (parameters is not null)
                 request.Content = new StringContent(JsonSerializer.Serialize(parameters), Encoding.UTF8, "application/json");
+            if (mutation) await Mcp.McpCloudMutationGuard.CheckBeforeMutationAsync(ct);
             using var response = await clients.CreateClient("CloudflareApi").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             var bytes = await CertificateDownloadHelper.ReadLimitedAsync(response.Content, 8 * 1024 * 1024, ct);
             if (!bytes.Success) return CloudJson.TransportFailure<JsonElement>(mutation, "Cloudflare", bytes.Code);

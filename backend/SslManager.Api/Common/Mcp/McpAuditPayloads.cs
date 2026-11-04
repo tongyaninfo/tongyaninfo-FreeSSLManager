@@ -17,11 +17,11 @@ public static partial class McpAuditPayloads
     private static readonly HashSet<string> InputFields = new(StringComparer.Ordinal)
     {
         "accountId", "zoneId", "certificateId", "batchId", "taskId", "scheduleId", "operationId", "targetId", "targetIds",
-        "dnsZoneId", "instanceId", "systemInstanceId", "protocolVersion", "domain", "name", "provider", "type", "status", "page", "pageSize", "validationMode", "autoCleanup", "apiVersion"
+        "dnsZoneId", "recordId", "instanceId", "systemInstanceId", "protocolVersion", "domain", "name", "provider", "type", "status", "enabled", "page", "pageSize", "validationMode", "autoCleanup", "apiVersion"
     };
     private static readonly HashSet<string> OutputFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "items", "batch", "tasks", "steps", "certificate", "jobs", "validation", "runs", "checks", "id", "accountId", "zoneId", "dnsZoneId", "certificateId", "certificateJobId", "batchId", "taskId", "scheduleId", "operationId", "targetId", "targetIds",
+        "items", "batch", "tasks", "steps", "certificate", "jobs", "validation", "runs", "checks", "id", "accountId", "zoneId", "dnsZoneId", "recordId", "certificateId", "certificateJobId", "batchId", "taskId", "scheduleId", "operationId", "targetId", "targetIds",
         "domain", "certificateDomain", "primaryDomain", "provider", "type", "status", "phase", "code", "kind", "toolName", "executorKey", "operationType",
         "total", "page", "pageSize", "ttl", "mx", "enabled", "active", "success", "availableTools", "service", "protocolVersions",
         "version", "planRevision", "configRevision", "productVersion", "verificationLevel", "fingerprint", "validationMode", "autoCleanup", "revokeOldCertificates",
@@ -50,7 +50,8 @@ public static partial class McpAuditPayloads
     {
         // 上下文只接受本模块已投影的入出参；读回也重新投影，防止旧/损坏记录绕过白名单。
         var clean = value with { ClientName = ClientText(value.ClientName, 128), ClientVersion = ClientText(value.ClientVersion, 64),
-            SystemName = ClientText(value.SystemName, 100), InstanceId = ClientText(value.InstanceId, 80), UserAgent = ClientText(value.UserAgent, 256) };
+            SystemName = ClientText(value.SystemName, 100), InstanceId = ClientText(value.InstanceId, 80), UserAgent = ClientText(value.UserAgent, 256),
+            TransportScheme = value.TransportScheme is "http" or "https" ? value.TransportScheme : null };
         var json = JsonSerializer.Serialize(clean, Json);
         if (Encoding.UTF8.GetByteCount(json) <= MaxContextBytes) return json;
         return JsonSerializer.Serialize(clean with { Output = null, OutputCaptured = value.OutputCaptured, OutputTruncated = true, Truncated = true }, Json);

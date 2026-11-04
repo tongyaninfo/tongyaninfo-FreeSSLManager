@@ -27,6 +27,7 @@ import type {
 import type { ManagedUser } from '@/services/ssl-manager/types';
 import { mcpConnectionName, mcpDate, mcpLines } from './presentation';
 import ApiKeys from './ApiKeys';
+import AgentConnection from './AgentConnection';
 
 type Values = Omit<McpClientInput, 'redirectUris' | 'expiresAtUtc'> & {
   redirectText: string;
@@ -42,7 +43,9 @@ export function connectionTemplate(
     name: mcpConnectionName(profile.systemName, profile.instanceId),
     systemName: profile.systemName,
     instanceId: profile.instanceId,
-    url: profile.mcpUrl,
+    url:
+      profile.oauthMcpUrl ??
+      (profile.mcpUrl.startsWith('https:') ? profile.mcpUrl : ''),
     transport: profile.transport,
     oauth: {
       clientId: profile.clientId,
@@ -695,7 +698,14 @@ export default function Clients({
               label: '系统实例 ID',
               children: profile?.instanceId,
             },
-            { key: 'url', label: 'MCP 地址', children: profile?.mcpUrl },
+            {
+              key: 'url',
+              label: 'OAuth MCP 地址',
+              children: profile
+                ? connectionTemplate(profile, profileClientType).url ||
+                  'OAuth 尚未配置 HTTPS 入口'
+                : '—',
+            },
           ]}
         />
         <Alert
@@ -705,6 +715,18 @@ export default function Clients({
           description="所有受控写工具都需要额外传 systemInstanceId，必须与此系统实例 ID 完全一致；它不是云平台证书的 instanceId。"
           style={{ marginBottom: 16 }}
         />
+        {profile && (
+          <AgentConnection
+            profile={{
+              systemName: profile.systemName,
+              instanceId: profile.instanceId,
+              mcpUrl: connectionTemplate(profile, profileClientType).url,
+              authenticationType: 'OAuth',
+              clientId: profile.clientId,
+              oauth: connectionTemplate(profile, profileClientType).oauth,
+            }}
+          />
+        )}
         <Alert
           type="info"
           title="这是通用 OAuth 接入参数摘要，需要按所用 Agent 的 OAuth 支持适配。"

@@ -4,7 +4,7 @@ using SslManager.Api.Models.Mcp;
 namespace SslManager.Api.Common.Mcp;
 
 /// <summary>固定、可审核的工具目录；协议入口、管理页面和权限校验使用同一份能力定义。</summary>
-public static class McpToolCatalog
+public static partial class McpToolCatalog
 {
     public const string ReadScope = "mcp.read";
     public const string WriteScope = "mcp.write";
@@ -28,6 +28,8 @@ public static class McpToolCatalog
         Tool("ssl_certificates_list", "查询证书", "按账号和业务域名过滤证书，返回测试环境及可部署标识；测试证书禁止部署，不下载材料。", true, ["account", "domain"],
             Page(("accountId", Id()), ("domain", Text(253)), ("status", Text(40)))),
         Tool("ssl_certificates_get", "读取证书详情", "读取授权证书的公开状态和申请进度，不返回私钥、验证值或内部快照。", true, ["account", "domain"],
+            Fields(("certificateId", Id())), ["certificateId"]),
+        Tool("ssl_certificates_validations_get", "读取证书验证记录", "仅返回授权证书的申请/吊销验证字段供完成域名验证；验证值仅在工具响应中，不进入审计、操作摘要或日志。", true, ["account", "domain"],
             Fields(("certificateId", Id())), ["certificateId"]),
         Tool("ssl_deployment_executors_list", "查询部署执行器", "读取已注册执行器及其能力。", true, ["executor"], Fields()),
         Tool("ssl_deployment_targets_list", "查询部署目标", "仅返回被明确授权的目标摘要，不返回脚本、凭据或完整配置。", true, ["target"],
@@ -64,7 +66,29 @@ public static class McpToolCatalog
         Tool("ssl_deployment_targets_test", "测试既有部署目标", "测试已保存目标；首次创建待确认操作，批准后携 operationId 重入。", false, ["target"],
             Fields(("targetId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["targetId", "idempotencyKey"]),
         Tool("ssl_deployment_tasks_inspect", "核对既有部署任务", "核对授权任务；首次创建待确认操作，批准后携 operationId 重入。", false, ["account", "domain", "target"],
-            Fields(("taskId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["taskId", "idempotencyKey"])
+            Fields(("taskId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["taskId", "idempotencyKey"]),
+        Tool("ssl_dns_records_create", "新增 DNS 解析", "首次仅准备不可变解析输入，批准后携同一 operationId、幂等键及输入重入。记录值加密保存，不进入审计。", false, ["account", "domain"],
+            DnsWriteFields(false), ["zoneId", "name", "type", "value", "idempotencyKey"]),
+        Tool("ssl_dns_records_update", "修改 DNS 解析", "按精确记录 ID 修改；原名称与新名称均须授权，审批后原记录变化将拒绝执行。首次准备，批准后携 operationId 重入。", false, ["account", "domain"],
+            DnsWriteFields(true), ["zoneId", "recordId", "name", "type", "value", "idempotencyKey"]),
+        Tool("ssl_dns_records_delete", "删除 DNS 解析", "只删除被批准的精确记录；记录变化或权限撤销立即阻断，未知结果不自动重发。首次准备，批准后携 operationId 重入。", false, ["account", "domain"],
+            Fields(("zoneId", Id()), ("recordId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["zoneId", "recordId", "idempotencyKey"]),
+        Tool("ssl_dns_records_status", "启停 DNS 解析", "按精确记录 ID 启停；首次准备，批准后携原 operationId 和全部原输入重入。", false, ["account", "domain"],
+            Fields(("zoneId", Id()), ("recordId", Id()), ("enabled", Boolean()), ("idempotencyKey", Key()), ("operationId", Id())), ["zoneId", "recordId", "enabled", "idempotencyKey"]),
+        Tool("ssl_certificates_revoke", "吊销 SSL 证书", "仅吊销原已签发或已过期证书；首次准备，批准后携 operationId 重入。异步查询沿用原证书任务，不重复吊销。", false, ["account", "domain"],
+            Fields(("certificateId", Id()), ("reason", Enum("unspecified", "keyCompromise", "caCompromise", "affiliationChanged", "superseded", "cessationOfOperation")),
+                ("idempotencyKey", Key()), ("operationId", Id())), ["certificateId", "idempotencyKey"]),
+        Tool("ssl_certificates_cancel", "取消 SSL 申请", "取消原待验证或审核中的申请；首次准备，批准后携 operationId 重入，不生成替代申请。", false, ["account", "domain"],
+            CertificateMutationFields(), ["certificateId", "idempotencyKey"]),
+        Tool("ssl_certificates_delete", "删除 SSL 证书", "仅删除已过期、已吊销或已取消证书；首次准备，批准后携 operationId 重入，云端未知时保留原记录。", false, ["account", "domain"],
+            CertificateMutationFields(), ["certificateId", "idempotencyKey"]),
+        Tool("ssl_certificates_cleanup_retry", "重试申请验证清理", "仅为已签发且开启自动清理的证书安排原记录精确核对；每次 DNS 删除前仍复核原调用权限。首次准备，批准后携 operationId 重入。", false, ["account", "domain"],
+            CertificateMutationFields(), ["certificateId", "idempotencyKey"]),
+        Tool("ssl_domains_sync", "同步 DNS 托管域", "同步账号的全部托管域快照，需要明确授权该账号全部域名。首次准备，批准后携 operationId 重入。", false, ["account", "domain"],
+            Fields(("accountId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["accountId", "idempotencyKey"]),
+        Tool("ssl_certificates_sync", "同步云证书", "同步账号全部证书并核对云端已不存在的记录，需要明确授权该账号全部域名。首次准备，批准后携 operationId 重入。", false, ["account", "domain"],
+            Fields(("accountId", Id()), ("idempotencyKey", Key()), ("operationId", Id())), ["accountId", "idempotencyKey"]),
+        .. ManagementTools()
     ];
 
     private static McpToolDescriptor Tool(string name, string title, string description, bool readOnly, string[] resources,
@@ -88,6 +112,15 @@ public static class McpToolCatalog
     }
 
     private static Dictionary<string, object> Fields(params (string Name, object Schema)[] fields) => fields.ToDictionary(x => x.Name, x => x.Schema, StringComparer.Ordinal);
+    private static Dictionary<string, object> DnsWriteFields(bool existing)
+    {
+        var fields = Fields(("zoneId", Id()), ("name", Text(253)), ("type", Enum("A", "AAAA", "CNAME", "TXT", "MX", "NS", "CAA", "SRV")),
+            ("value", Text(4096)), ("ttl", new { type = "integer", minimum = 60, maximum = 604800 }), ("line", Text(100)),
+            ("mx", new { type = "integer", minimum = 0, maximum = 65535 }), ("idempotencyKey", Key()), ("operationId", Id()));
+        if (existing) fields["recordId"] = Id();
+        return fields;
+    }
+    private static Dictionary<string, object> CertificateMutationFields() => Fields(("certificateId", Id()), ("idempotencyKey", Key()), ("operationId", Id()));
     private static Dictionary<string, object> Page(params (string Name, object Schema)[] fields)
     {
         var result = Fields(fields);

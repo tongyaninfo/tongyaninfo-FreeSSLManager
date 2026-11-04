@@ -269,6 +269,52 @@ describe('MCP 管理界面', () => {
     );
   });
 
+  it('空服务基址默认当前origin，内网HTTP可提交且不含后台路径', async () => {
+    render(<Settings />);
+    const input = await screen.findByLabelText('服务基址（HTTP / HTTPS）');
+    await waitFor(() => expect(input).toHaveValue(window.location.origin));
+    fireEvent.change(input, { target: { value: 'http://192.168.10.10:5001' } });
+    expect(
+      screen.getByText(
+        'HTTP 仅用于受信任内网的 API Key 接入，OAuth 仍须 HTTPS。',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存 MCP 设置' }));
+    await waitFor(() =>
+      expect(mcpApi.saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ publicBaseUrl: 'http://192.168.10.10:5001' }),
+      ),
+    );
+  });
+
+  it('已保存的自定义服务基址不会被当前浏览器origin覆盖', async () => {
+    vi.mocked(mcpApi.settings).mockResolvedValue(
+      ok({ ...settings, publicBaseUrl: 'https://custom.example.com:8443' }),
+    );
+    render(<Settings />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('服务基址（HTTP / HTTPS）')).toHaveValue(
+        'https://custom.example.com:8443',
+      ),
+    );
+  });
+
+  it('服务基址拒绝后台路径，不把页面URL误作MCP服务地址', async () => {
+    render(<Settings />);
+    const input = await screen.findByLabelText('服务基址（HTTP / HTTPS）');
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.change(input, {
+      target: { value: 'http://192.168.10.10:5001/system/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存 MCP 设置' }));
+    expect(
+      await screen.findByText(
+        '请输入不含账号、路径、查询参数和片段的 HTTP / HTTPS 地址',
+      ),
+    ).toBeInTheDocument();
+    expect(mcpApi.saveSettings).not.toHaveBeenCalled();
+  });
+
   it('桌面等不支持环境禁止启用，已有配置也不能重新打开外部服务', async () => {
     vi.mocked(mcpApi.status).mockResolvedValue(
       ok({
@@ -456,6 +502,9 @@ describe('MCP 管理界面', () => {
       await screen.findByRole('button', { name: '核对操作详情' }),
     );
     await screen.findByText('创建临时 DNS 验证记录');
+    expect(
+      screen.getByRole('region', { name: '审批内容摘要' }),
+    ).toHaveTextContent('account-1');
     expect(screen.getAllByText('original-user').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: '批准此操作' }));
     fireEvent.click(
@@ -550,12 +599,18 @@ describe('MCP 管理界面', () => {
       expiresAtUtc: null,
     });
     expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: '复制完整接入指令（含本次密钥）' }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '服务设置' }));
     await waitFor(() =>
       expect(
         screen.queryByLabelText('一次展示的 API Key'),
       ).not.toBeInTheDocument(),
     );
+    expect(
+      screen.queryByRole('button', { name: '复制完整接入指令（含本次密钥）' }),
+    ).not.toBeInTheDocument();
   });
 
   it('API Key 明文在会话失效后立即卸载', async () => {
@@ -580,6 +635,9 @@ describe('MCP 管理界面', () => {
     await act(async () => window.dispatchEvent(new Event('ssl-auth-expired')));
     expect(
       screen.queryByLabelText('一次展示的 API Key'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '复制完整接入指令（含本次密钥）' }),
     ).not.toBeInTheDocument();
   });
 
@@ -688,6 +746,7 @@ describe('MCP 管理界面', () => {
           instanceId: 'prod-1',
           clientName: '第三方 Agent',
           clientVersion: '1.0',
+          transportScheme: 'http',
           input: { domain: 'example.com' },
           inputCaptured: true,
           outputCaptured: false,
@@ -697,6 +756,7 @@ describe('MCP 管理界面', () => {
     );
     expect(screen.getByText('旧生产名称')).toBeInTheDocument();
     expect(screen.getByText('prod-1')).toBeInTheDocument();
+    expect(screen.getByText('HTTP')).toBeInTheDocument();
     expect(screen.getByText('第三方 Agent / 1.0')).toBeInTheDocument();
     expect(screen.getByText('已截断')).toBeInTheDocument();
     expect(

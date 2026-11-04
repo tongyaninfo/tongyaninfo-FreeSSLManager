@@ -24,7 +24,9 @@ public static class McpArgumentValidator
         {
             if (value.ValueKind != JsonValueKind.String) return false;
             var text = value.GetString()!;
-            if (text.Any(char.IsControl) || schema.TryGetProperty("minLength", out var min) && text.Length < min.GetInt32() ||
+            // 只有明确标记的凭据输入允许 PEM 换行，普通参数继续拒绝控制字符。
+            var multiline = schema.TryGetProperty("x-mcp-multiline", out var flag) && flag.ValueKind == JsonValueKind.True;
+            if (text.Any(character => char.IsControl(character) && !(multiline && character is '\r' or '\n' or '\t')) || schema.TryGetProperty("minLength", out var min) && text.Length < min.GetInt32() ||
                 schema.TryGetProperty("maxLength", out var max) && text.Length > max.GetInt32()) return false;
             if (schema.TryGetProperty("enum", out var allowed) && !allowed.EnumerateArray().Any(item => item.GetString() == text)) return false;
         }

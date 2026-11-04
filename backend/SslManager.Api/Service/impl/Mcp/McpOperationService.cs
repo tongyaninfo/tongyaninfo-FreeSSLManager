@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
 using SslManager.Api.Common;
 using SslManager.Api.Data;
 using SslManager.Api.Models;
@@ -13,7 +14,9 @@ namespace SslManager.Api.Service.impl.Mcp;
 /// <summary>准备、Web 审批与持久受理分离；调用重试始终沿用原参数和原有效用户。</summary>
 public sealed partial class McpOperationService(AppDbContext db, IMcpAuthorizationService authorization,
     CertificateManagementService certificates, IDeploymentService deployments, IDeploymentTargetService targets,
-    IIdGenerator ids) : IMcpOperationService
+    IIdGenerator ids, DomainManagementService? businessDomains = null, IDataProtectionProvider? businessProtection = null,
+    ICertificateScheduleService? businessSchedules = null, ICloudAccountStore? businessAccounts = null,
+    ICloudProviderResolver? businessProviders = null) : IMcpOperationService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private sealed record DeploymentArguments(string CertificateId, DeploymentPlanRequest Request);
@@ -92,7 +95,7 @@ public sealed partial class McpOperationService(AppDbContext db, IMcpAuthorizati
     }
 
     private async Task<ApiResult<McpOperationView>> PrepareAsync<T>(McpCallerContext caller, string kind, string tool, T arguments,
-        McpResourceScope[] resources, string summary, string idempotencyKey, CancellationToken ct, bool preparing = false)
+        McpResourceScope[] resources, string summary, string idempotencyKey, CancellationToken ct, bool preparing = false, bool allDomainsRequired = false)
     {
         if (!ValidKey(idempotencyKey)) return Fail("VALIDATION", "业务幂等键必须为 1～128 个非控制字符。");
         var json = JsonSerializer.Serialize(arguments, Json);
@@ -108,7 +111,7 @@ public sealed partial class McpOperationService(AppDbContext db, IMcpAuthorizati
             Id = ids.NewId(), ClientId = caller.ClientId, AuthorizationId = caller.AuthorizationId, EffectiveUserId = caller.EffectiveUserId,
             AuthenticationType = caller.AuthenticationType, ApiKeyId = caller.ApiKeyId,
             PreparedBy = caller.EffectiveUserId, ToolName = tool, Kind = kind, IdempotencyKey = idempotencyKey,
-            ArgumentsJson = json, ArgumentsDigest = digest, ResourceJson = JsonSerializer.Serialize(new McpOperationResourceSnapshot(resources, summary), Json),
+            ArgumentsJson = json, ArgumentsDigest = digest, ResourceJson = JsonSerializer.Serialize(new McpOperationResourceSnapshot(resources, summary, allDomainsRequired), Json),
             SourceIp = caller.SourceIp, ScopesJson = JsonSerializer.Serialize(caller.Scopes, Json), SettingsRevision = permission.SettingsRevision,
             TaskId = kind == "TaskInspection" && arguments is AuxiliaryArguments auxiliary ? auxiliary.ResourceId : "",
             ClientRevision = permission.ClientRevision, PolicyRevision = permission.PolicyRevision,

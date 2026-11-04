@@ -280,7 +280,11 @@ app.Use(async (context, next) =>
     // 转发头处理前保存 TCP 对端，审计同时区分真实代理与经过白名单信任的客户端来源。
     if (context.Request.Path.StartsWithSegments("/mcp") || context.Request.Path.StartsWithSegments("/oauth/mcp") ||
         context.Request.Path.StartsWithSegments("/.well-known"))
+    {
         context.Items["McpActualRemoteIp"] = context.Connection.RemoteIpAddress?.ToString() ?? "";
+        // 仅请求内保留代理处理前的地址链，HTTP内网模式据此拒绝未完整还原的来源，不进入持久审计。
+        context.Items["McpOriginalForwardedFor"] = context.Request.Headers["X-Forwarded-For"].ToArray();
+    }
     await next();
 });
 // 未显式配置可信代理时完全不处理转发头，避免空 KnownProxies/Networks 意外信任任意来源。

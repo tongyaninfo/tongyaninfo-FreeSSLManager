@@ -27,7 +27,8 @@ public sealed class McpBearerHandler(IOptionsMonitor<AuthenticationSchemeOptions
         var secret = apiKeyHeader.ToString();
         if (secret.Length == 0)
         {
-            if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return AuthenticateResult.NoResult();
+            if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            { if (!Request.IsHttps) Context.Items["McpHttpApiKeyRequired"] = true; return AuthenticateResult.NoResult(); }
             secret = value[7..];
         }
         if (secret.Length == 0 || secret.Length > 4096 || secret.Any(char.IsWhiteSpace) || secret.Contains(','))
@@ -50,7 +51,11 @@ public sealed class McpBearerHandler(IOptionsMonitor<AuthenticationSchemeOptions
         }
         else
         {
+            // 内网明文只接受预分配API Key，合法OAuth令牌也不能通过HTTP使用。
+            if (!Request.IsHttps) { Context.Items["McpHttpApiKeyRequired"] = true; return AuthenticateResult.Fail("HTTP MCP 仅接受 API Key。"); }
             if (!runtime.OAuthReady) return AuthenticateResult.Fail("OAuth 尚未就绪。");
+            if (McpNetwork.ValidHttpsOrigin(runtime.Issuer) && !McpNetwork.MatchesExactAddress(Request, runtime.Issuer))
+                return AuthenticateResult.Fail("OAuth令牌仅允许在配置的HTTPS issuer入口使用。");
             var result = await Context.AuthenticateAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
             if (!result.Succeeded || result.Principal is null) return AuthenticateResult.Fail("MCP Bearer 无效或已撤销。");
             principal = result.Principal;
@@ -80,7 +85,7 @@ public sealed class McpBearerHandler(IOptionsMonitor<AuthenticationSchemeOptions
         Response.StatusCode = Context.Items.ContainsKey("McpRateLimited") ? StatusCodes.Status429TooManyRequests : StatusCodes.Status401Unauthorized;
         if (Response.StatusCode == 429) Response.Headers.RetryAfter = "60";
         var issuer = runtime.Issuer;
-        Response.Headers.WWWAuthenticate = !runtime.OAuthReady || issuer.Length == 0 ? "Bearer realm=\"MCP API Key\""
+        Response.Headers.WWWAuthenticate = !Request.IsHttps || !runtime.OAuthReady || issuer.Length == 0 ? "Bearer realm=\"MCP API Key\""
             : "Bearer resource_metadata=\"" + issuer + "/.well-known/oauth-protected-resource/mcp\"";
         return Task.CompletedTask;
     }

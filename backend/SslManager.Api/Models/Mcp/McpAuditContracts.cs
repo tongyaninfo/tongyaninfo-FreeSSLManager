@@ -6,7 +6,7 @@ namespace SslManager.Api.Models.Mcp;
 public sealed record McpAuditContext(string? ClientName = null, string? ClientVersion = null,
     JsonElement? Input = null, JsonElement? Output = null, bool InputCaptured = false,
     bool OutputCaptured = false, bool InputTruncated = false, bool OutputTruncated = false, bool Truncated = false,
-    string? SystemName = null, string? InstanceId = null, string? UserAgent = null);
+    string? SystemName = null, string? InstanceId = null, string? UserAgent = null, string? TransportScheme = null);
 
 public sealed record McpAuditTrendPoint(DateTime BucketUtc, long Requests, long ToolCalls, long Failed, long Denied);
 
