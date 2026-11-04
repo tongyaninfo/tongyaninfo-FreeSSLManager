@@ -241,11 +241,19 @@ jobs:
         working-directory: desktop
         run: npm run package -- --target ${{ matrix.rid }} --skip-frontend
 
+      - name: 收集安装包
+        shell: bash
+        run: |
+          mkdir -p "out/${{ matrix.rid }}"
+          find desktop/.artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} "out/${{ matrix.rid }}/" \;
+          ls -lh "out/${{ matrix.rid }}"
+          test -n "$(find "out/${{ matrix.rid }}" -type f | head -1)"
+
       - name: 上传安装包
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.rid }}
-          path: desktop/.artifacts/**
+          path: out/${{ matrix.rid }}/**
           if-no-files-found: error
           retention-days: 7
 

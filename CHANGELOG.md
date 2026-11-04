@@ -2,6 +2,21 @@
 
 所有版本使用 `MAJOR.MINOR.PATCH`；根目录 [VERSION](VERSION) 是当前源码版本的唯一权威，`backend/SslManager.Api/SslManager.Api.csproj` 与 `frontend/package.json` 的版本与其保持一致。
 
+## [1.1.2] - 2026-11-04
+
+修复桌面安装包在 Windows 上构建失败的问题。
+
+### 修复
+
+- Windows 构建脚本直接 `spawn` `npm.cmd` 会触发 `spawn EINVAL`；改为通过 npm 的 JS 入口
+  （`npm_execpath`）执行 npm 命令，Windows x64/ARM64 打包恢复正常。
+- 实验性 ARM64 桌面任务的产物收集方式与正式任务对齐。
+
+### 说明
+
+- 无数据库结构变化，升级兼容 1.1.0 / 1.1.1。
+- 安装包仍为未签名测试包：macOS 使用 ad-hoc 签名，Windows 未签名。
+
 ## [1.1.1] - 2026-11-04
 
 开源仓库补齐桌面客户端源码与发布流程，无数据库结构变化。

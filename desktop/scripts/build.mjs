@@ -11,6 +11,13 @@ import { checkRelease } from '../../scripts/release.mjs';
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(desktopRoot, '..');
 
+/** Windows 上不能直接 spawn npm.cmd（会 EINVAL）；统一通过 npm 的 JS 入口执行。 */
+async function runNpm(args, cwd) {
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli) throw new Error('请通过 npm run 执行打包命令；缺少 npm_execpath，无法安全调用 npm。');
+  await runCommand(process.execPath, [npmCli, ...args], { cwd });
+}
+
 /** 安装包构建全部使用显式版本、平台和路径，不查询 Git，也不发布到外部服务。 */
 export async function build(args = process.argv.slice(2)) {
   const options = parseArguments(args);
@@ -20,10 +27,8 @@ export async function build(args = process.argv.slice(2)) {
   const version = requireVersion(metadata.version);
   const selected = options.all ? Object.values(targets) : [targets[options.rid]];
   const incomplete = [];
-  if (!options.skipFrontend && !options.validateOnly)
-    await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { cwd: path.join(repositoryRoot, 'frontend') });
-  if (!options.skipElectron && !options.validateOnly)
-    await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:electron'], { cwd: desktopRoot });
+  if (!options.skipFrontend && !options.validateOnly) await runNpm(['run', 'build'], path.join(repositoryRoot, 'frontend'));
+  if (!options.skipElectron && !options.validateOnly) await runNpm(['run', 'build:electron'], desktopRoot);
   await stat(path.join(repositoryRoot, 'frontend', 'dist', 'index.html'));
   const icons = options.prepareOnly || options.validateOnly ? undefined : await (await import('./generate-icons.mjs')).generateIcons();
   for (const target of selected) {
