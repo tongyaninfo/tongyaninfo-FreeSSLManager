@@ -1,5 +1,9 @@
 # 通研免费 SSL 管理系统（Tongyan FreeSSL Manager）
 
+**通研官网**：[www.tongyaninfo.com](https://www.tongyaninfo.com/)
+
+**产品官网**：[freessl.tongyaninfo.com](https://freessl.tongyaninfo.com/)
+
 **把证书申请、DNS 验证、部署和到期维护，放进一个工作台。**
 
 通研免费 SSL 管理系统面向需要维护多个域名、云账号和服务的开发者与运维人员：集中管理腾讯云、阿里云、Cloudflare 的证书与 DNS 资源，自动完成 Let's Encrypt ACME 签发，预览并批量部署到自建服务，按周期自动申请与部署，并在到期前通过 SMTP 提醒。同时提供标准 MCP 接口，让支持 MCP 的 AI Agent 在授权范围内查询状态、准备证书申请和部署计划。
